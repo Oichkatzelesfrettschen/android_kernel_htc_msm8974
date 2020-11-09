@@ -421,6 +421,10 @@ $(error LLVM_IAS=0 requires CROSS_COMPILE to name the GNU assembler)
 endif
 CLANG_FLAGS	+= -no-integrated-as \
 		   --prefix=$(dir $(shell which $(CROSS_COMPILE)as))$(notdir $(CROSS_COMPILE))
+else
+# Mainline's CONFIG_AS_IS_LLVM: Clang's integrated assembler builds the
+# .S files and the inline asm.
+AS_IS_LLVM	:= y
 endif
 KBUILD_CFLAGS	+= $(CLANG_FLAGS)
 KBUILD_AFLAGS	+= $(CLANG_FLAGS)
@@ -719,7 +723,9 @@ ifdef CONFIG_DEBUG_INFO
 # -gdwarf-<N> since long before 4.9) and keeps the emitted line tables
 # inside what this tree's assembler parses.
 KBUILD_CFLAGS	+= -g $(call cc-option, -gdwarf-4)
+ifneq ($(AS_IS_LLVM),y)
 KBUILD_AFLAGS	+= -gdwarf-2
+endif
 endif
 
 ifdef CONFIG_DEBUG_INFO_REDUCED
