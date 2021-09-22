@@ -225,6 +225,19 @@ void do_bad_area(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 #define VM_FAULT_BADMAP		0x010000
 #define VM_FAULT_BADACCESS	0x020000
 
+static inline bool is_permission_fault(unsigned int fsr)
+{
+	int fs = fsr_fs(fsr);
+#ifdef CONFIG_ARM_LPAE
+	if ((fs & FS_PERM_NOLL_MASK) == FS_PERM_NOLL)
+		return true;
+#else
+	if (fs == FS_L1_PERM || fs == FS_L2_PERM)
+		return true;
+#endif
+	return false;
+}
+
 /*
  * Check that the permissions on the VMA allow for the fault which occurred.
  * If we encountered a write fault, we must have write permission, otherwise
@@ -303,6 +316,9 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	 */
 	if (in_atomic() || !mm)
 		goto no_context;
+
+	if ((fsr & FSR_LNX_PF) && is_permission_fault(fsr) && !user_mode(regs))
+		die_kernel_fault("execution of memory", mm, addr, fsr, regs);
 
 	/*
 	 * As per x86, we may deadlock here.  However, since the kernel only
