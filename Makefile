@@ -723,7 +723,12 @@ ifdef CONFIG_DEBUG_INFO
 # -gdwarf-<N> since long before 4.9) and keeps the emitted line tables
 # inside what this tree's assembler parses.
 KBUILD_CFLAGS	+= -g $(call cc-option, -gdwarf-4)
-ifneq ($(AS_IS_LLVM),y)
+# The integrated assembler takes the C flags: a DWARF 4 unit spans every
+# section a .S file switches to through DW_AT_ranges, where DWARF 2 holds
+# one. GNU as accepts --gdwarf-4 from 2.35 on, so its path keeps DWARF 2.
+ifeq ($(AS_IS_LLVM),y)
+KBUILD_AFLAGS	+= -g -gdwarf-4
+else
 KBUILD_AFLAGS	+= -gdwarf-2
 endif
 endif
