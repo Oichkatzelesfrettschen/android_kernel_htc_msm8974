@@ -860,7 +860,6 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 {
 	struct ffs_epfile *epfile = file->private_data;
 	struct ffs_ep *ep;
-	struct ffs_data *ffs = epfile->ffs;
 	char *data = NULL;
 	ssize_t ret;
 	int halt;
@@ -968,8 +967,6 @@ first_try:
 		ret = -EBADMSG;
 	} else {
 		/* Fire the request */
-		struct completion *done;
-
 		struct usb_request *req;
  		if (io_data->aio) {
  			req = usb_ep_alloc_request(ep->ep, GFP_KERNEL);

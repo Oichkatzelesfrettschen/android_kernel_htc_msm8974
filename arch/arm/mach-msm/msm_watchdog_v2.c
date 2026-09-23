@@ -106,9 +106,10 @@ struct msm_watchdog_data {
  */
 static int enable = 1;
 module_param(enable, int, 0);
-static void __iomem *msm_wdt_base;
 
 #ifdef CONFIG_ARCH_MSM8226
+static void __iomem *msm_wdt_base;
+
 void msm_watchdog_reset(void)
 {
 	pr_info("%s: triggering MSM Apps Watchdog bark...\n", __func__);
