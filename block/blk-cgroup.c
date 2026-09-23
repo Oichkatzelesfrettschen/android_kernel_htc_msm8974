@@ -44,6 +44,7 @@ struct cgroup_subsys blkio_subsys = {
 	.name = "blkio",
 	.create = blkiocg_create,
 	.can_attach = blkiocg_can_attach,
+	.allow_attach = subsys_cgroup_allow_attach,
 	.attach = blkiocg_attach,
 	.destroy = blkiocg_destroy,
 	.populate = blkiocg_populate,

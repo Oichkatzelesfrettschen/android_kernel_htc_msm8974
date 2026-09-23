@@ -2190,6 +2190,35 @@ out_free_group_list:
 	return retval;
 }
 
+/**
+ * subsys_cgroup_allow_attach - allow_attach hook for controllers that let a
+ * CAP_SYS_NICE task move other users' tasks
+ * @cgrp: destination cgroup
+ * @tset: tasks being attached
+ *
+ * attach_task_by_pid() calls allow_attach only after the uid check fails, so
+ * a caller holding CAP_SYS_NICE (system_server applying task profiles) may
+ * move any task, and other callers keep the uid rule.
+ */
+int subsys_cgroup_allow_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
+{
+	const struct cred *cred = current_cred(), *tcred;
+	struct task_struct *task;
+
+	if (capable(CAP_SYS_NICE))
+		return 0;
+
+	cgroup_taskset_for_each(task, cgrp, tset) {
+		tcred = __task_cred(task);
+
+		if (current != task && cred->euid != tcred->uid &&
+		    cred->euid != tcred->suid)
+			return -EACCES;
+	}
+
+	return 0;
+}
+
 static int cgroup_allow_attach(struct cgroup *cgrp, struct cgroup_taskset *tset)
 {
 	struct cgroup_subsys *ss;

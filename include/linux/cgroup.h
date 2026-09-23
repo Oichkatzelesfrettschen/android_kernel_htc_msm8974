@@ -445,6 +445,9 @@ int cgroup_taskset_size(struct cgroup_taskset *tset);
  * See Documentation/cgroups/cgroups.txt for details
  */
 
+int subsys_cgroup_allow_attach(struct cgroup *cgrp,
+			       struct cgroup_taskset *tset);
+
 struct cgroup_subsys {
 	struct cgroup_subsys_state *(*create)(struct cgroup *cgrp);
 	int (*pre_destroy)(struct cgroup *cgrp);
