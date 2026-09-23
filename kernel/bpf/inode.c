@@ -178,11 +178,11 @@ static int bpf_mkobj(struct inode *dir, struct dentry *dentry, umode_t mode,
 }
 
 static struct dentry *
-bpf_lookup(struct inode *dir, struct dentry *dentry, struct nameidata *nd)
+bpf_lookup(struct inode *dir, struct dentry *dentry, unsigned int flags)
 {
 	if (strchr(dentry->d_name.name, '.'))
 		return ERR_PTR(-EPERM);
-	return simple_lookup(dir, dentry, nd);
+	return simple_lookup(dir, dentry, flags);
 }
 
 static const struct inode_operations bpf_dir_iops = {
