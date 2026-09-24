@@ -188,9 +188,14 @@ struct android_usb_function_holder {
 *    Used for controlling ADB userspace disable/enable requests.
 *    While it is nonzero the configurations are removed from the
 *    composite device and the pullup is off.
+* @pullup_hold: Number of forced re-enumerations in progress. While it
+*    is nonzero the pullup stays off and the configurations stay bound.
+*    The gadget requests the pullup exactly when disable_depth and
+*    pullup_hold are both zero.
 * @mutex: Internal mutex for protecting device member fields. It
-*    serializes every change of disable_depth; function_bind_sem
-*    nests inside it.
+*    serializes every change of disable_depth and pullup_hold, so
+*    it is the only owner of the pullup; function_bind_sem nests
+*    inside it.
 * @pdata: Platform data fetched from the kernel device platfrom data.
 * @connected: True if got connect notification from the gadget UDC.
 *    False if got disconnect notification from the gadget UDC.
@@ -225,6 +230,7 @@ struct android_dev {
 
 	bool enabled;
 	int disable_depth;
+	int pullup_hold;
 	struct mutex mutex;
 	struct android_usb_platform_data *pdata;
 
@@ -471,7 +477,12 @@ static int android_enable(struct android_dev *dev)
 				return err;
 			}
 		}
-		usb_gadget_connect(cdev->gadget);
+		/*
+		 * A forced re-enumeration in progress reasserts the pullup
+		 * when its window closes, so the host sees one disconnect.
+		 */
+		if (!dev->pullup_hold)
+			usb_gadget_connect(cdev->gadget);
 	}
 
 	return err;
@@ -483,13 +494,60 @@ static void android_disable(struct android_dev *dev)
 	struct android_configuration *conf;
 
 	if (dev->disable_depth++ == 0) {
-		usb_gadget_disconnect(cdev->gadget);
+		/* A forced re-enumeration in progress already dropped it */
+		if (!dev->pullup_hold)
+			usb_gadget_disconnect(cdev->gadget);
 		/* Cancel pending control requests */
 		usb_ep_dequeue(cdev->gadget->ep0, cdev->req);
 
 		list_for_each_entry(conf, &dev->configs, list_item)
 			usb_remove_config(cdev, &conf->usb_config);
 	}
+}
+
+/*
+ * Force the host to re-enumerate: drop the pullup for hold_ms, then
+ * reassert it. composite_disconnect() hands FUNCTIONFS_DISABLE to adbd,
+ * which closes and reopens ep0 inside the window; the ffs closed and
+ * ready callbacks then move only disable_depth, the rebuilt
+ * configuration binds with the pullup off, and the host sees one
+ * disconnect of hold_ms. The pullup changes state only when
+ * disable_depth or pullup_hold crosses zero, so every
+ * usb_gadget_disconnect() pairs with one usb_gadget_connect(); an
+ * unpaired disconnect leaves dwc3 running with its IRQ masked, because
+ * dwc3_gadget_pullup() calls disable_irq() on every disconnect.
+ */
+static void android_force_reenumerate(struct usb_composite_dev *cdev,
+				      unsigned int hold_ms)
+{
+	struct android_dev *dev = cdev_to_android_dev(cdev);
+
+	mutex_lock(&dev->mutex);
+	if (cdev->gadget->speed == USB_SPEED_UNKNOWN) {
+		mutex_unlock(&dev->mutex);
+		return;
+	}
+	if (dev->pullup_hold++ == 0 && dev->disable_depth == 0)
+		usb_gadget_disconnect(cdev->gadget);
+	composite_disconnect(cdev->gadget);
+	mutex_unlock(&dev->mutex);
+
+	msleep(hold_ms);
+
+	mutex_lock(&dev->mutex);
+	/*
+	 * usb_remove_config() inside the window resets os_type and the
+	 * mass-storage mode; the host on the other end has not changed,
+	 * and leaving os_type at OS_NOT_YET would make the next
+	 * GET_DESCRIPTOR(CONFIG) schedule this reset again.
+	 */
+	if (os_type == OS_NOT_YET) {
+		os_type = OS_LINUX;
+		fsg_update_mode(1);
+	}
+	if (--dev->pullup_hold == 0 && dev->disable_depth == 0)
+		usb_gadget_connect(cdev->gadget);
+	mutex_unlock(&dev->mutex);
 }
 
 
