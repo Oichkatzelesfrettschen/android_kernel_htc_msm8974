@@ -3677,9 +3677,9 @@ static int binder_open(struct inode *nodp, struct file *filp)
 		     current->group_leader->pid, current->pid);
 
 	eproc = kzalloc(sizeof(*eproc), GFP_KERNEL);
-	proc = &eproc->proc;
-	if (proc == NULL)
+	if (eproc == NULL)
 		return -ENOMEM;
+	proc = &eproc->proc;
 	get_task_struct(current->group_leader);
 	proc->tsk = current->group_leader;
 	eproc->cred = get_cred(filp->f_cred);
@@ -3889,6 +3889,7 @@ static void binder_deferred_release(struct binder_proc *proc)
 	}
 
 	put_task_struct(proc->tsk);
+	put_cred(binder_get_cred(proc));
 
 	binder_debug(BINDER_DEBUG_OPEN_CLOSE,
 		     "%s: %d threads %d, nodes %d (ref %d), refs %d, active transactions %d, buffers %d, pages %d\n",
