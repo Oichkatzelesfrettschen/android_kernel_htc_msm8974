@@ -437,6 +437,30 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 }
 
 /**
+ * _set_context_priority() - Decode the context priority from its flags
+ * @drawctxt: Pointer to the adreno draw context
+ *
+ * A priority left at KGSL_CONTEXT_PRIORITY_UNDEF is replaced by
+ * ADRENO_CONTEXT_DEFAULT_PRIORITY in the flags, so the value copied back to
+ * userspace names the priority the dispatcher uses.
+ *
+ * TODO: confirm on hardware that the Adreno EGL context created for
+ * EGL_CONTEXT_PRIORITY_HIGH_IMG arrives with bits [15:12] = 4; the
+ * kgsl_context_create trace event prints the flags copied back here.
+ */
+static inline void _set_context_priority(struct adreno_context *drawctxt)
+{
+	if ((drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) ==
+			KGSL_CONTEXT_PRIORITY_UNDEF)
+		drawctxt->base.flags |= (ADRENO_CONTEXT_DEFAULT_PRIORITY <<
+				KGSL_CONTEXT_PRIORITY_SHIFT);
+
+	drawctxt->base.priority =
+		(drawctxt->base.flags & KGSL_CONTEXT_PRIORITY_MASK) >>
+		KGSL_CONTEXT_PRIORITY_SHIFT;
+}
+
+/**
  * adreno_drawctxt_create - create a new adreno draw context
  * @dev_priv: the owner of the context
  * @flags: flags for the context (passed from user space)
@@ -472,6 +496,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 		KGSL_CONTEXT_USER_GENERATED_TS |
 		KGSL_CONTEXT_NO_FAULT_TOLERANCE |
 		KGSL_CONTEXT_CTX_SWITCH |
+		KGSL_CONTEXT_PRIORITY_MASK |
 		KGSL_CONTEXT_TYPE_MASK |
 		KGSL_CONTEXT_PWR_CONSTRAINT);
 
@@ -483,13 +508,14 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	init_waitqueue_head(&drawctxt->wq);
 	init_waitqueue_head(&drawctxt->waiting);
 
-	/*
-	 * Set up the plist node for the dispatcher.  For now all contexts have
-	 * the same priority, but later the priority will be set at create time
-	 * by the user
-	 */
+	_set_context_priority(drawctxt);
 
-	plist_node_init(&drawctxt->pending, ADRENO_CONTEXT_DEFAULT_PRIORITY);
+	/*
+	 * The dispatcher pending list is a plist keyed on the context
+	 * priority, so a lower value is picked first whenever inflight slots
+	 * free up.
+	 */
+	plist_node_init(&drawctxt->pending, drawctxt->base.priority);
 
 	if (adreno_dev->gpudev->ctxt_create) {
 		ret = adreno_dev->gpudev->ctxt_create(adreno_dev, drawctxt);

@@ -395,6 +395,8 @@ struct kgsl_process_private;
  * struct kgsl_context - Master structure for a KGSL context object
  * @refcount: kref object for reference counting the context
  * @id: integer identifier for the context
+ * @priority: dispatcher priority decoded from KGSL_CONTEXT_PRIORITY_MASK;
+ * lower values are serviced first
  * @priv: in-kernel context flags, use KGSL_CONTEXT_* values
  * @dev_priv: pointer to the owning device instance
  * @reset_status: status indication whether a gpu reset occured and whether
@@ -417,6 +419,7 @@ struct kgsl_process_private;
 struct kgsl_context {
 	struct kref refcount;
 	uint32_t id;
+	uint32_t priority;
 	pid_t pid;
 	pid_t tid;
 	struct kgsl_device_private *dev_priv;

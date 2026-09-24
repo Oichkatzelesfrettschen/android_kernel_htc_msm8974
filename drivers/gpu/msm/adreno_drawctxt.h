@@ -33,7 +33,13 @@ struct adreno_context_type {
 
 #define ADRENO_CONTEXT_CMDQUEUE_SIZE 128
 
-#define ADRENO_CONTEXT_DEFAULT_PRIORITY 1
+/*
+ * Priority assigned when the create flags leave KGSL_CONTEXT_PRIORITY_MASK at
+ * KGSL_CONTEXT_PRIORITY_UNDEF.  It matches the value the Adreno EGL encodes for
+ * EGL_CONTEXT_PRIORITY_MEDIUM_IMG, so unprioritized clients rank with default
+ * EGL contexts.
+ */
+#define ADRENO_CONTEXT_DEFAULT_PRIORITY 8
 
 #define ADRENO_CONTEXT_STATE_ACTIVE 0
 #define ADRENO_CONTEXT_STATE_INVALID 1
