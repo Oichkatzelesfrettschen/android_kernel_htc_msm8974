@@ -186,7 +186,11 @@ struct android_usb_function_holder {
 * @disable_depth: Number of times the device was disabled, after
 *    symmetrical number of enables the device willl be enabled.
 *    Used for controlling ADB userspace disable/enable requests.
-* @mutex: Internal mutex for protecting device member fields.
+*    While it is nonzero the configurations are removed from the
+*    composite device and the pullup is off.
+* @mutex: Internal mutex for protecting device member fields. It
+*    serializes every change of disable_depth; function_bind_sem
+*    nests inside it.
 * @pdata: Platform data fetched from the kernel device platfrom data.
 * @connected: True if got connect notification from the gadget UDC.
 *    False if got disconnect notification from the gadget UDC.
