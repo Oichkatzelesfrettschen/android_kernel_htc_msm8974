@@ -811,6 +811,14 @@ enum {
 	SBI_NEED_FSCK,				/* need fsck.f2fs to fix */
 	SBI_POR_DOING,				/* recovery is doing or not */
 	SBI_NEED_SB_WRITE,			/* need to recover superblock */
+	SBI_SM_DESTROYING,			/* segment manager is being freed:
+						 * f2fs_put_super() has taken
+						 * cp_rwsem for write and will
+						 * not release it again before
+						 * destroy_segment_manager(). A
+						 * writeback pass that finds
+						 * this set must not block on
+						 * cp_rwsem. */
 };
 
 enum {
