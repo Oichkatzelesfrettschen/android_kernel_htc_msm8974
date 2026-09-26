@@ -1267,9 +1267,29 @@ write:
 		goto out;
 	}
 
-	/* Dentry blocks are controlled by checkpoint */
+	/*
+	 * Dentry blocks are controlled by checkpoint: write_checkpoint()
+	 * writes them synchronously while already holding cp_rwsem for
+	 * write, so this path takes no lock of its own in normal operation
+	 * -- doing so would self-deadlock against that same thread. Once
+	 * SBI_SM_DESTROYING is set, f2fs_put_super() is instead the one
+	 * holding cp_rwsem for write and never releasing it (see
+	 * destroy_segment_manager()'s caller); this background flush of a
+	 * directory inode evict_inodes() left open for a forced unmount
+	 * then needs its own trylock to avoid running past the segment
+	 * manager's teardown.
+	 */
 	if (S_ISDIR(inode->i_mode)) {
+		bool sm_locked = false;
+
+		if (unlikely(is_sbi_flag_set(sbi, SBI_SM_DESTROYING))) {
+			if (!down_read_trylock(&sbi->cp_rwsem))
+				goto redirty_out;
+			sm_locked = true;
+		}
 		err = do_write_data_page(&fio);
+		if (sm_locked)
+			up_read(&sbi->cp_rwsem);
 		goto done;
 	}
 
@@ -1279,7 +1299,19 @@ write:
 		goto redirty_out;
 
 	err = -EAGAIN;
-	f2fs_lock_op(sbi);
+	/*
+	 * As above: block for the ordinary case (checkpoint's own write
+	 * lock always releases promptly), but once SBI_SM_DESTROYING is
+	 * set, a blocking f2fs_lock_op() here would park this writeback
+	 * thread forever on cp_rwsem, since f2fs_put_super() holds it for
+	 * write from that point until the filesystem instance is freed.
+	 */
+	if (unlikely(is_sbi_flag_set(sbi, SBI_SM_DESTROYING))) {
+		if (!down_read_trylock(&sbi->cp_rwsem))
+			goto redirty_out;
+	} else {
+		f2fs_lock_op(sbi);
+	}
 	if (f2fs_has_inline_data(inode))
 		err = f2fs_write_inline_data(inode, page);
 	if (err == -EAGAIN)
