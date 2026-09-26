@@ -134,6 +134,8 @@ extern const struct adreno_context_ops adreno_preamble_ctx_ops;
  * @pending: Priority list node for the dispatcher list of pending contexts
  * @wq: Workqueue structure for contexts to sleep pending room in the queue
  * @waiting: Workqueue structure for contexts waiting for a timestamp or event
+ * @timeout: Workqueue structure for a detach waiting for the context to be
+ *           invalidated by GPU recovery
  * @queued: Number of commands queued in the cmdqueue
  * @ops: Context switch functions for this context.
  * @fault_policy: GFT fault policy set in cmdbatch_skip_cmd();
@@ -182,6 +184,7 @@ struct adreno_context {
 	struct plist_node pending;
 	wait_queue_head_t wq;
 	wait_queue_head_t waiting;
+	wait_queue_head_t timeout;
 
 	int queued;
 

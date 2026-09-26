@@ -434,6 +434,7 @@ void adreno_drawctxt_invalidate(struct kgsl_device *device,
 	/* Give the bad news to everybody waiting around */
 	wake_up_all(&drawctxt->waiting);
 	wake_up_all(&drawctxt->wq);
+	wake_up_all(&drawctxt->timeout);
 }
 
 /**
@@ -507,6 +508,7 @@ adreno_drawctxt_create(struct kgsl_device_private *dev_priv,
 	spin_lock_init(&drawctxt->lock);
 	init_waitqueue_head(&drawctxt->wq);
 	init_waitqueue_head(&drawctxt->waiting);
+	init_waitqueue_head(&drawctxt->timeout);
 
 	_set_context_priority(drawctxt);
 
@@ -631,12 +633,49 @@ int adreno_drawctxt_detach(struct kgsl_context *context)
 		drawctxt->internal_timestamp, 30 * 1000);
 
 	/*
-	 * If the wait for global fails then nothing after this point is likely
-	 * to work very well - BUG_ON() so we can take advantage of the debug
-	 * tools to figure out what the h - e - double hockey sticks happened
+	 * The A3xx CP executes ringbuffer IBs in order and cannot preempt one,
+	 * so a context's submitted commands leave the ring only by retiring or
+	 * through a GPU reset, and its pagetable and buffers must stay mapped
+	 * until one of the two happens. A context created with
+	 * KGSL_CONTEXT_NO_FAULT_TOLERANCE (OpenCL) is exempt from the
+	 * dispatcher's long-IB timeout, so a compute kernel that outlives the
+	 * wait is still running here. Raise a detach-timeout fault: the
+	 * dispatcher halts the CP, resets the GPU, invalidates every detached
+	 * context in flight and replays the other contexts' commands.
+	 * The device mutex is dropped while recovery runs, because
+	 * dispatcher_do_fault() takes it. The wait is uninterruptible: an
+	 * exiting task detaches with SIGKILL pending, and an early return
+	 * would free memory the CP still addresses.
 	 */
+	if (ret) {
+		KGSL_DRV_ERR(device,
+			"detach wait for global ts=%u timed out: ctx=%u type=%u error=%d, recovering\n",
+			drawctxt->internal_timestamp, context->id,
+			drawctxt->type, ret);
 
-	BUG_ON(ret);
+		adreno_set_gpu_fault(adreno_dev,
+			ADRENO_CTX_DETATCH_TIMEOUT_FAULT);
+		kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
+
+		adreno_dispatcher_schedule(device);
+
+		wait_event_timeout(drawctxt->timeout,
+			drawctxt->state == ADRENO_CONTEXT_STATE_INVALID,
+			msecs_to_jiffies(5000));
+
+		kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
+
+		if (drawctxt->state == ADRENO_CONTEXT_STATE_INVALID) {
+			KGSL_DRV_ERR(device,
+				"ctx=%u invalidated by GPU recovery\n",
+				context->id);
+			ret = 0;
+		} else {
+			KGSL_DRV_ERR(device,
+				"ctx=%u not invalidated by GPU recovery\n",
+				context->id);
+		}
+	}
 
 	kgsl_sharedmem_writel(device, &device->memstore,
 			KGSL_MEMSTORE_OFFSET(context->id, soptimestamp),
