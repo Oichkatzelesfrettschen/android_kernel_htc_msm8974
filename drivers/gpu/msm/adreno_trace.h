@@ -123,7 +123,8 @@ TRACE_EVENT(adreno_cmdbatch_fault,
 				{ 0, "none" },
 				{ ADRENO_SOFT_FAULT, "soft" },
 				{ ADRENO_HARD_FAULT, "hard" },
-				{ ADRENO_TIMEOUT_FAULT, "timeout" })
+				{ ADRENO_TIMEOUT_FAULT, "timeout" },
+				{ ADRENO_CTX_DETATCH_TIMEOUT_FAULT, "detach_timeout" })
 	)
 );
 
