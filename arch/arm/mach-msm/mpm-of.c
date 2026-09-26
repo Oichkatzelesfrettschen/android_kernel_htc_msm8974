@@ -33,6 +33,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
+#include <linux/wakeup_reason.h>
 #include <asm/hardware/gic.h>
 #include <asm/arch_timer.h>
 #include <mach/gpio.h>
@@ -559,6 +560,8 @@ void msm_mpm_exit_sleep(bool from_idle)
 				irq_to_desc(apps_irq) : NULL;
 
 			if (desc && !irqd_is_level_type(&desc->irq_data)) {
+				if (!from_idle)
+					log_wakeup_reason(apps_irq);
 				irq_set_pending(apps_irq);
 				if (from_idle) {
 					raw_spin_lock(&desc->lock);
