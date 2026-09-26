@@ -1387,7 +1387,13 @@ mtp_function_bind(struct usb_configuration *c, struct usb_function *f)
 	id = usb_interface_id(c, f);
 	if (id < 0)
 		return id;
+	/*
+	 * The configuration numbers interfaces in bind order, and a PTP
+	 * binding presents ptp_interface_desc, so both descriptors carry the
+	 * allocated number.
+	 */
 	mtp_interface_desc.bInterfaceNumber = id;
+	ptp_interface_desc.bInterfaceNumber = id;
 
 	/* allocate endpoints */
 	ret = mtp_create_bulk_endpoints(dev, &mtp_fullspeed_in_desc,
