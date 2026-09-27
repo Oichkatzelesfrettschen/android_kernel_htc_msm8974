@@ -448,7 +448,16 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 		rb_parent = &tmp->vm_rb;
 
 		mm->map_count++;
-		retval = copy_page_range(mm, oldmm, mpnt);
+		/*
+		 * VM_WIPEONFORK vmas start with no pages in the child: the
+		 * child anon_vma has no ptes yet, so the first access after
+		 * fork takes a fresh anonymous fault instead of inheriting
+		 * the parent's data through copy-on-write.
+		 */
+		if (!(tmp->vm_flags & VM_WIPEONFORK))
+			retval = copy_page_range(mm, oldmm, mpnt);
+		else
+			retval = 0;
 
 		if (tmp->vm_ops && tmp->vm_ops->open)
 			tmp->vm_ops->open(tmp);
