@@ -943,7 +943,7 @@ static int __init dynamic_debug_init(void)
 	int ret = 0;
 	int n = 0;
 
-	if (__start___verbose == __stop___verbose) {
+	if (&__start___verbose[0] == &__stop___verbose[0]) {
 		pr_warn("_ddebug table is empty in a "
 			"CONFIG_DYNAMIC_DEBUG build");
 		return 1;

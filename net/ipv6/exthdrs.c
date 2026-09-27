@@ -202,6 +202,7 @@ static int ipv6_dest_hao(struct sk_buff *skb, int optoff)
 	struct inet6_skb_parm *opt = IP6CB(skb);
 	struct ipv6hdr *ipv6h = ipv6_hdr(skb);
 	struct in6_addr tmp_addr;
+	struct in6_addr home_addr;
 	int ret;
 
 	if (opt->dsthao) {
@@ -218,15 +219,17 @@ static int ipv6_dest_hao(struct sk_buff *skb, int optoff)
 			KERN_DEBUG "hao invalid option length = %d\n", hao->length);
 		goto discard;
 	}
+	memcpy(&home_addr, (u8 *)hao +
+	       offsetof(struct ipv6_destopt_hao, addr), sizeof(home_addr));
 
-	if (!(ipv6_addr_type(&hao->addr) & IPV6_ADDR_UNICAST)) {
+	if (!(ipv6_addr_type(&home_addr) & IPV6_ADDR_UNICAST)) {
 		LIMIT_NETDEBUG(
-			KERN_DEBUG "hao is not an unicast addr: %pI6\n", &hao->addr);
+			KERN_DEBUG "hao is not an unicast addr: %pI6\n", &home_addr);
 		goto discard;
 	}
 
 	ret = xfrm6_input_addr(skb, (xfrm_address_t *)&ipv6h->daddr,
-			       (xfrm_address_t *)&hao->addr, IPPROTO_DSTOPTS);
+			       (xfrm_address_t *)&home_addr, IPPROTO_DSTOPTS);
 	if (unlikely(ret < 0))
 		goto discard;
 
@@ -244,7 +247,7 @@ static int ipv6_dest_hao(struct sk_buff *skb, int optoff)
 		skb->ip_summed = CHECKSUM_NONE;
 
 	tmp_addr = ipv6h->saddr;
-	ipv6h->saddr = hao->addr;
+	ipv6h->saddr = home_addr;
 	hao->addr = tmp_addr;
 
 	if (skb->tstamp.tv64 == 0)

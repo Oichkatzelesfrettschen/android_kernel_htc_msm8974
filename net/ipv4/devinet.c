@@ -954,10 +954,9 @@ static int inet_gifconf(struct net_device *dev, char __user *buf, int len)
 		if (len < (int) sizeof(ifr))
 			break;
 		memset(&ifr, 0, sizeof(struct ifreq));
-		if (ifa->ifa_label)
-			strcpy(ifr.ifr_name, ifa->ifa_label);
-		else
-			strcpy(ifr.ifr_name, dev->name);
+		strlcpy(ifr.ifr_name,
+			ifa->ifa_label[0] ? ifa->ifa_label : dev->name,
+			IFNAMSIZ);
 
 		(*(struct sockaddr_in *)&ifr.ifr_addr).sin_family = AF_INET;
 		(*(struct sockaddr_in *)&ifr.ifr_addr).sin_addr.s_addr =
