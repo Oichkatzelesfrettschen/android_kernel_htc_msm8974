@@ -1329,12 +1329,11 @@ static char *WDI_getRespMsgString(wpt_uint16 wdiRespMsgId)
 /**
   @brief WDI_TraceHostFWCapabilities - Parses both host and Firmware
                                          Capability bitmap array.
-  @param capabilityBitmap - Base address of a 4 element Bitmap array
-                                               of type tANI_U32.
+  @param capabilities - Packed host or firmware capability message.
   @see
   @returns  None
   */
-void WDI_TraceHostFWCapabilities(tANI_U32 *capabilityBitmap)
+void WDI_TraceHostFWCapabilities(const tWlanFeatCaps *capabilities)
 {
      int i,j;
      char *pTempCapStr = NULL;
@@ -1350,7 +1349,7 @@ void WDI_TraceHostFWCapabilities(tANI_U32 *capabilityBitmap)
      pCapStr = pTempCapStr;
      for (j = 0; j < 4; j++) {
          for (i = 0; i < 32; i++) {
-             if ((*(capabilityBitmap + j) & (1 << i))) {
+             if (capabilities->featCaps[j] & (1U << i)) {
                  switch(i + (j * 32)) {
                      case MCC: snprintf(pCapStr, sizeof("MCC"), "%s", "MCC");
                           pCapStr += strlen("MCC");
@@ -26449,6 +26448,8 @@ WDI_PackRoamScanOffloadParams
    wpt_uint16                 usDataOffset               = 0;
    wpt_uint16                 usSendSize                 = 0;
    tpRoamCandidateListParams  pRoamCandidateListParams   = NULL;
+   tEdType                    encryption                = 0;
+   tEdType                    multicastEncryption       = 0;
    wpt_uint8 i;
    /*-----------------------------------------------------------------------
      Get message buffer
@@ -26471,10 +26472,12 @@ WDI_PackRoamScanOffloadParams
                   pwdiRoamScanOffloadReqParams->wdiRoamOffloadScanInfo.ConnectedNetwork.currAPbssid,
                   HAL_MAC_ADDR_LEN);
    pRoamCandidateListParams->ConnectedNetwork.authentication = pwdiRoamScanOffloadReqParams->wdiRoamOffloadScanInfo.ConnectedNetwork.authentication;
-   WDI_wdiEdTypeEncToEdTypeEnc(&pRoamCandidateListParams->ConnectedNetwork.encryption,
+   WDI_wdiEdTypeEncToEdTypeEnc(&encryption,
                                pwdiRoamScanOffloadReqParams->wdiRoamOffloadScanInfo.ConnectedNetwork.encryption);
-   WDI_wdiEdTypeEncToEdTypeEnc(&pRoamCandidateListParams->ConnectedNetwork.mcencryption,
+   WDI_wdiEdTypeEncToEdTypeEnc(&multicastEncryption,
                                pwdiRoamScanOffloadReqParams->wdiRoamOffloadScanInfo.ConnectedNetwork.mcencryption);
+   pRoamCandidateListParams->ConnectedNetwork.encryption = encryption;
+   pRoamCandidateListParams->ConnectedNetwork.mcencryption = multicastEncryption;
 
    pRoamCandidateListParams->ConnectedNetwork.ssId.length
                 = pwdiRoamScanOffloadReqParams->wdiRoamOffloadScanInfo.ConnectedNetwork.ssId.ucLength;
@@ -29403,7 +29406,7 @@ WDI_featureCapsExchangeReq
       gpHostWlanFeatCaps->featCaps[3]
    );
    WPAL_TRACE( eWLAN_MODULE_DAL_CTRL,  eWLAN_PAL_TRACE_LEVEL_INFO, "Host Capability");
-   WDI_TraceHostFWCapabilities(gpHostWlanFeatCaps->featCaps);
+   WDI_TraceHostFWCapabilities(gpHostWlanFeatCaps);
    wdiEventData.wdiRequest      = WDI_FEATURE_CAPS_EXCHANGE_REQ;
    wdiEventData.pEventData      = gpHostWlanFeatCaps; 
    wdiEventData.uEventDataSize  = fCapsStructSize; 
@@ -29571,7 +29574,7 @@ WDI_ProcessFeatureCapsExchangeRsp
       gpFwWlanFeatCaps->featCaps[3]
    );
    WPAL_TRACE(  eWLAN_MODULE_DAL_CTRL,  eWLAN_PAL_TRACE_LEVEL_INFO, "Firmware Capability");
-   WDI_TraceHostFWCapabilities(gpFwWlanFeatCaps->featCaps);
+   WDI_TraceHostFWCapabilities(gpFwWlanFeatCaps);
    wdiFeatureCapsExchangeCb = (WDI_featureCapsExchangeCb) pWDICtx -> pfncRspCB; 
 
    /*Notify UMAC - there is no callback right now but can be used in future if reqd */
