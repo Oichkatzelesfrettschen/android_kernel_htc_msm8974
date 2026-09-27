@@ -1894,6 +1894,7 @@ static void voc_get_tx_rx_topology(struct voice_data *v,
 static int voice_send_set_device_cmd(struct voice_data *v)
 {
 	struct cvp_set_device_cmd  cvp_setdev_cmd;
+	uint32_t tx_topology_id, rx_topology_id;
 	int ret = 0, voc_idx = 0;
 	void *apr_cvp;
 	u16 cvp_handle;
@@ -1925,9 +1926,9 @@ static int voice_send_set_device_cmd(struct voice_data *v)
 	cvp_setdev_cmd.hdr.token = 0;
 	cvp_setdev_cmd.hdr.opcode = VSS_IVOCPROC_CMD_SET_DEVICE_V2;
 
-	voc_get_tx_rx_topology(v,
-			&cvp_setdev_cmd.cvp_set_device_v2.tx_topology_id,
-			&cvp_setdev_cmd.cvp_set_device_v2.rx_topology_id);
+	voc_get_tx_rx_topology(v, &tx_topology_id, &rx_topology_id);
+	cvp_setdev_cmd.cvp_set_device_v2.tx_topology_id = tx_topology_id;
+	cvp_setdev_cmd.cvp_set_device_v2.rx_topology_id = rx_topology_id;
 
 	cvp_setdev_cmd.cvp_set_device_v2.tx_port_id = v->dev_tx.port_id;
 	cvp_setdev_cmd.cvp_set_device_v2.rx_port_id = v->dev_rx.port_id;
@@ -3151,6 +3152,7 @@ done:
 static int voice_setup_vocproc(struct voice_data *v)
 {
 	struct cvp_create_full_ctl_session_cmd cvp_session_cmd;
+	uint32_t tx_topology_id, rx_topology_id;
 	int ret = 0, voc_idx = 0;
 	void *apr_cvp;
 
@@ -3181,9 +3183,9 @@ static int voice_setup_vocproc(struct voice_data *v)
 	cvp_session_cmd.hdr.opcode =
 			VSS_IVOCPROC_CMD_CREATE_FULL_CONTROL_SESSION_V2;
 
-	voc_get_tx_rx_topology(v,
-			&cvp_session_cmd.cvp_session.tx_topology_id,
-			&cvp_session_cmd.cvp_session.rx_topology_id);
+	voc_get_tx_rx_topology(v, &tx_topology_id, &rx_topology_id);
+	cvp_session_cmd.cvp_session.tx_topology_id = tx_topology_id;
+	cvp_session_cmd.cvp_session.rx_topology_id = rx_topology_id;
 
 	cvp_session_cmd.cvp_session.direction = 2; /*tx and rx*/
 	cvp_session_cmd.cvp_session.tx_port_id = v->dev_tx.port_id;

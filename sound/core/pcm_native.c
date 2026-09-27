@@ -141,7 +141,7 @@ int snd_pcm_info_user(struct snd_pcm_substream *substream,
 
 #undef RULES_DEBUG
 
-#if 1 //htc audio
+#ifdef RULES_DEBUG
 #define HW_PARAM(v) [SNDRV_PCM_HW_PARAM_##v] = #v
 static const char * const snd_pcm_hw_param_names[] = {
 	HW_PARAM(ACCESS),

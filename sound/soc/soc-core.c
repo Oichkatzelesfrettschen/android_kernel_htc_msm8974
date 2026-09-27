@@ -3307,14 +3307,12 @@ static char *fmt_single_name(struct device *dev, int *id)
 	} else {
 		/* I2C component devices are named "bus-addr"  */
 		if (sscanf(name, "%x-%x", &id1, &id2) == 2) {
-			char tmp[NAME_SIZE];
-
 			/* create unique ID number from I2C addr and bus */
 			*id = ((id1 & 0xffff) << 16) + id2;
 
 			/* sanitize component name for DAI link creation */
-			snprintf(tmp, NAME_SIZE, "%s.%s", dev->driver->name, name);
-			strlcpy(name, tmp, NAME_SIZE);
+			return kasprintf(GFP_KERNEL, "%s.%s", dev->driver->name,
+					 name);
 		} else
 			*id = 0;
 	}

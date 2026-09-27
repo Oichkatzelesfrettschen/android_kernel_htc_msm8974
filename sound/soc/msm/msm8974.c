@@ -641,10 +641,11 @@ static void msm8974_fluid_ext_us_amp_on(u32 spk)
 			 __func__, spk);
 		msm8974_ext_spk_pamp |= spk;
 		if ((msm8974_ext_spk_pamp & LO_1_SPK_AMP) &&
-		    (msm8974_ext_spk_pamp & LO_3_SPK_AMP))
+		    (msm8974_ext_spk_pamp & LO_3_SPK_AMP)) {
 			pr_debug("%s: Turn on US amp. spk = 0x%x\n",
 				 __func__, spk);
 			gpio_direction_output(ext_ult_lo_amp_gpio, 1);
+		}
 
 	} else  {
 		pr_err("%s: Invalid external speaker ampl. spk = 0x%x\n",
