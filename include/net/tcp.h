@@ -1040,6 +1040,11 @@ static inline int tcp_full_space(const struct sock *sk)
 	return tcp_win_from_space(sk->sk_rcvbuf); 
 }
 
+static inline u32 tcp_dst_advmss(const struct dst_entry *dst)
+{
+	return max_t(u32, dst_metric_advmss(dst), TCP_MIN_MSS);
+}
+
 static inline void tcp_openreq_init(struct request_sock *req,
 				    struct tcp_options_received *rx_opt,
 				    struct sk_buff *skb)
