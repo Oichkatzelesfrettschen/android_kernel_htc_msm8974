@@ -36,13 +36,14 @@
  */
 #define readl_poll_timeout(addr, val, cond, sleep_us, timeout_us) \
 ({ \
-	ktime_t timeout = ktime_add_us(ktime_get(), timeout_us); \
-	might_sleep_if(timeout_us); \
+	unsigned long __timeout_us = (timeout_us); \
+	ktime_t timeout = ktime_add_us(ktime_get(), __timeout_us); \
+	might_sleep_if(__timeout_us != 0); \
 	for (;;) { \
 		(val) = readl(addr); \
 		if (cond) \
 			break; \
-		if (timeout_us && ktime_compare(ktime_get(), timeout) > 0) { \
+		if (__timeout_us && ktime_compare(ktime_get(), timeout) > 0) { \
 			(val) = readl(addr); \
 			break; \
 		} \
