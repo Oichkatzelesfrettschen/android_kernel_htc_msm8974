@@ -104,17 +104,20 @@ int ieee80211_radiotap_iterator_init(
 		return -EINVAL;
 
 	/* sanity check for allowed length and radiotap length field */
-	if (max_length < get_unaligned_le16(&radiotap_header->it_len))
+	if (max_length < get_unaligned_le16((const u8 *)radiotap_header +
+			 offsetof(struct ieee80211_radiotap_header, it_len)))
 		return -EINVAL;
 
 	iterator->_rtheader = radiotap_header;
-	iterator->_max_length = get_unaligned_le16(&radiotap_header->it_len);
+	iterator->_max_length = get_unaligned_le16((const u8 *)radiotap_header +
+			 offsetof(struct ieee80211_radiotap_header, it_len));
 	iterator->_arg_index = 0;
-	iterator->_bitmap_shifter = get_unaligned_le32(&radiotap_header->it_present);
+	iterator->_bitmap_shifter = get_unaligned_le32((const u8 *)radiotap_header +
+			 offsetof(struct ieee80211_radiotap_header, it_present));
 	iterator->_arg = (uint8_t *)radiotap_header + sizeof(*radiotap_header);
 	iterator->_reset_on_ext = 0;
-	iterator->_next_bitmap = &radiotap_header->it_present;
-	iterator->_next_bitmap++;
+	iterator->_next_bitmap = (__le32 *)((u8 *)radiotap_header +
+				     sizeof(*radiotap_header));
 	iterator->_vns = vns;
 	iterator->current_namespace = &radiotap_ns;
 	iterator->is_radiotap_ns = 1;
