@@ -1515,7 +1515,8 @@ u64 snmp_fold_field64(void __percpu *mib[], int offt, size_t syncp_offset)
 EXPORT_SYMBOL_GPL(snmp_fold_field64);
 #endif
 
-int snmp_mib_init(void __percpu *ptr[2], size_t mibsize, size_t align)
+int snmp_mib_init(void __percpu *ptr[SNMP_ARRAY_SZ], size_t mibsize,
+		  size_t align)
 {
 	BUG_ON(ptr == NULL);
 	ptr[0] = __alloc_percpu(mibsize, align);
@@ -1850,4 +1851,3 @@ static int __init ipv4_proc_init(void)
 #endif /* CONFIG_PROC_FS */
 
 MODULE_ALIAS_NETPROTO(PF_INET);
-
