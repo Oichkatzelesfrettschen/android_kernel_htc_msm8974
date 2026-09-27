@@ -82,13 +82,14 @@ arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
 # generating code for Krait, which is compatible with the instruction set of the
 # Cortex-A15, because GCC will warn us about ambiguous ISA restrictions caused
 # by seemingly conflicting -march and -mcpu options.
-# If $(CC) does not support the -mcpu=cortex-a15 option, fall back on passing
-# -march=armv7-a to specify the ISA restriction, though this is suboptimal. To
-# keep things simpler, we don't bother with a fallback option if the compiler
-# doesn't even support -march=armv7-a, since in that situation we would have
-# bigger problems.
-arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a)
-arch-$(CONFIG_MSM_CORTEX_A7)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a15,-march=armv7-a)
+# GCC never shipped a Krait or Cortex-A7 -mcpu value old enough for this
+# tree's GCC 4.9 prebuilt to recognize, hence the cortex-a15 fallback below
+# (Krait 400 shares its pipeline depth and NEON/VFPv4 unit with Cortex-A15,
+# the closest -mcpu GCC 4.9 does accept). Clang has carried -mcpu=krait and
+# -mcpu=cortex-a7 since its ARM backend's earliest releases, so cc-option
+# selects the exact core under clang and only falls back under GCC.
+arch-$(CONFIG_ARCH_MSM_KRAIT)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=krait,$(call cc-option,-mcpu=cortex-a15,-march=armv7-a))
+arch-$(CONFIG_MSM_CORTEX_A7)	:=-D__LINUX_ARM_ARCH__=7 $(call cc-option,-mcpu=cortex-a7,$(call cc-option,-mcpu=cortex-a15,-march=armv7-a))
 
 # This selects how we optimise for the processor.
 tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
