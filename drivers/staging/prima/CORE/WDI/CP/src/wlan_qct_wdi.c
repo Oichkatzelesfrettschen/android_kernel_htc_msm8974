@@ -8709,6 +8709,7 @@ WDI_ProcessConfigBSSReq
   wpt_uint16                   usDataOffset        = 0;
   wpt_uint16                   usSendSize          = 0;
   WDI_Status                   wdiStatus           = WDI_STATUS_SUCCESS;
+  wpt_boolean                  use_v1              = eWLAN_PAL_FALSE;
 
   tConfigBssReqMsg             halConfigBssReqMsg;
   /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -8839,7 +8840,8 @@ WDI_ProcessConfigBSSReq
 
   /* Allocation of BssReqMsg Memory Based on Firmware Capabilities */
 #ifdef WLAN_FEATURE_11AC
-  if (WDI_getFwWlanFeatCaps(DOT11AC))
+  use_v1 = WDI_getFwWlanFeatCaps(DOT11AC);
+  if (use_v1)
      uMsgSize = sizeof(halConfigBssReqMsg.uBssParams.configBssParams_V1); // Version - 1 For 11AC
   else
 #endif
@@ -8861,7 +8863,7 @@ WDI_ProcessConfigBSSReq
 
   /*Copy the BSS request */
 #ifdef WLAN_FEATURE_11AC
-  if (WDI_getFwWlanFeatCaps(DOT11AC))
+  if (use_v1)
     WDI_CopyWDIConfigBSSToHALConfigBSS( (tConfigBssParams*)&halConfigBssReqMsg.uBssParams.configBssParams_V1,
                                         &pwdiConfigBSSParams->wdiReqInfo, eWLAN_PAL_TRUE);
   else
@@ -8877,7 +8879,7 @@ WDI_ProcessConfigBSSReq
   halConfigBssReqMsg.uBssParams.configBssParams.staContext.bssIdx = pBSSSes->ucBSSIdx;
 
 #ifdef WLAN_FEATURE_11AC
-  if (WDI_getFwWlanFeatCaps(DOT11AC)){
+  if (use_v1){
     wpalMemoryCopy( pSendBuffer+usDataOffset,
                   &halConfigBssReqMsg.uBssParams.configBssParams_V1,
                   uMsgSize);
@@ -12252,6 +12254,7 @@ WDI_ProcessConfigStaReq
   wpt_uint16                   usDataOffset        = 0;
   wpt_uint16                   usSendSize          = 0;
   WDI_Status                   wdiStatus           = WDI_STATUS_SUCCESS;
+  wpt_boolean                  use_v1              = eWLAN_PAL_FALSE;
 
   tConfigStaReqMsg             halConfigStaReqMsg;
   wpt_uint16                   uMsgSize            = 0;
@@ -12314,7 +12317,8 @@ WDI_ProcessConfigStaReq
   
   /* Allocation of StaReqMsg Memory Based on Firmware Capabilities */
 #ifdef WLAN_FEATURE_11AC
-  if (WDI_getFwWlanFeatCaps(DOT11AC))
+  use_v1 = WDI_getFwWlanFeatCaps(DOT11AC);
+  if (use_v1)
      uMsgSize = sizeof(halConfigStaReqMsg.uStaParams.configStaParams_V1); // Version-1 For 11AC
   else
 #endif
@@ -12338,7 +12342,7 @@ WDI_ProcessConfigStaReq
   /*Copy the station context*/
   WDI_CopyWDIStaCtxToHALStaCtx( &halConfigStaReqMsg.uStaParams.configStaParams,
                                 &pwdiConfigSTAParams->wdiReqInfo,
-                                WDI_getFwWlanFeatCaps(DOT11AC));
+                                use_v1);
 
   if(pwdiConfigSTAParams->wdiReqInfo.wdiSTAType == WDI_STA_ENTRY_SELF)
   {
