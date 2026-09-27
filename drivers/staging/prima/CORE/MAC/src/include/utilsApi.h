@@ -736,4 +736,3 @@ void CreateFinishScanRawFrame(tpAniSirGlobal pMac, tSirMacMgmtHdr *macMgmtHdr, t
 
 #endif /* __UTILSAPI_H */
 
-
