@@ -107,14 +107,14 @@
 
 #define QWLAN_TXFIR_CFG_DPD_BYPASS_MASK     0x8
 
-typedef struct {
+typedef PACKED_PRE struct PACKED_POST {
    tANI_U32 tableSize;                      /* Whole NV Table Size */
    tANI_U32 chunkSize;                      /* Current Chunk Size < 2K */
    eNvTable nvTable;
    tANI_U8  tableData;                     /* Filled by host driver */
 } pttGetNvTable;
 
-typedef struct {
+typedef PACKED_PRE struct PACKED_POST {
    tANI_U32 tableSize;                      /* Whole NV Table Size */
    tANI_U32 chunkSize;                      /* Current Chunk Size < 2K */
    eNvTable nvTable;
@@ -3112,6 +3112,7 @@ int wlan_hdd_process_ftm_host_cmd
    tPttMsgbuffer *pFTMCmd = (tPttMsgbuffer *)ftmCmd;
    int            needToRouteHal = 1;
    int            hostState = 1;
+   tANI_U32       registerValue;
 
    switch(pFTMCmd->msgId)
    {
@@ -3164,8 +3165,10 @@ int wlan_hdd_process_ftm_host_cmd
          break;
 
       case PTT_MSG_DBG_READ_REGISTER:
+         registerValue = pFTMCmd->msgBody.DbgReadRegister.regValue;
          wpalReadRegister(pFTMCmd->msgBody.DbgReadRegister.regAddr,
-                          &pFTMCmd->msgBody.DbgReadRegister.regValue);
+                          &registerValue);
+         pFTMCmd->msgBody.DbgReadRegister.regValue = registerValue;
          needToRouteHal = 0;
          break;
 
@@ -4661,9 +4664,8 @@ static VOS_STATUS wlan_ftm_priv_get_rx_rssi(hdd_adapter_t *pAdapter,char *buf)
         goto done;
     }
 
-   ret = snprintf(buf, WE_FTM_MAX_STR_LEN, " R0:%d, R1:%d",
-                      pMsgBody->GetRxRssi.rssi.rx[0],
-                  pMsgBody->GetRxRssi.rssi.rx[1]);
+   ret = snprintf(buf, WE_FTM_MAX_STR_LEN, " R0:%d",
+                  pMsgBody->GetRxRssi.rssi.rx[PHY_RX_CHAIN_0]);
 
    if( ret < 0 || ret >= WE_FTM_MAX_STR_LEN )
    {
