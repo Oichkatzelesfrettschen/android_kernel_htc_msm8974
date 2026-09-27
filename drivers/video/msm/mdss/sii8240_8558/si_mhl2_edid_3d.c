@@ -660,7 +660,8 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 									*pMHL2_video_descriptor);
 			}
 
-			if (this_mode_doable |=qualify_pixel_clock_for_mhl((void*)mhl_edid_3d_data,pixel_clock_frequency,16)) {
+			if (qualify_pixel_clock_for_mhl((void*)mhl_edid_3d_data,pixel_clock_frequency,16)) {
+				this_mode_doable = 1;
 				display_timing_enumeration_callback(mhl_edid_3d_data, columns,
 									rows, 16, vertical_refresh_rate_in_milliHz,
 									*pMHL2_video_descriptor);
@@ -2231,6 +2232,19 @@ uint8_t i;
 
 								MHL_TX_EDID_INFO(mhl_edid_3d_data->dev_context,
 										"EDID -> Short Descriptor Colorimetry Block\n");
+								break;
+
+							case ETC_VENDOR_SPECIFIC_VIDEO_DATA_BLOCK:
+							case ETC_VESA_VIDEO_DISPLAY_DEVICE_INFORMATION_DATA_BLOCK:
+							case ETC_VESA_VIDEO_DATA_BLOCK:
+							case ETC_HDMI_VIDEO_DATA_BLOCK:
+							case ETC_VIDEO_RELATED:
+							case ETC_CEA_MISC_AUDIO_FIELDS:
+							case ETC_VENDOR_SPECIFIC_AUDIO_DATA_BLOCK:
+							case ETC_HDMI_AUDIO_DATA_BLOCK:
+							case ETC_AUDIO_RELATED:
+							case ETC_GENERAL:
+							default:
 								break;
 						}
 					}
