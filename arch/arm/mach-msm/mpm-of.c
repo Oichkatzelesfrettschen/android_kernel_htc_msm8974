@@ -559,9 +559,19 @@ void msm_mpm_exit_sleep(bool from_idle)
 			struct irq_desc *desc = apps_irq ?
 				irq_to_desc(apps_irq) : NULL;
 
+			/*
+			 * A level-type IRQ stays asserted after resume, so it
+			 * needs no MPM replay: irq_set_pending() and the idle
+			 * resend below stay gated to edge-type as upstream
+			 * intends. But it is just as real a wakeup source as an
+			 * edge-type one, and log_wakeup_reason() only records,
+			 * it does not replay -- gate it on the resolved IRQ
+			 * existing, not on its trigger type.
+			 */
+			if (desc && !from_idle)
+				log_wakeup_reason(apps_irq);
+
 			if (desc && !irqd_is_level_type(&desc->irq_data)) {
-				if (!from_idle)
-					log_wakeup_reason(apps_irq);
 				irq_set_pending(apps_irq);
 				if (from_idle) {
 					raw_spin_lock(&desc->lock);
