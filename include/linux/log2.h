@@ -15,11 +15,8 @@
 #include <linux/types.h>
 #include <linux/bitops.h>
 
-/*
- * deal with unrepresentable constant logarithms
- */
-extern __attribute__((const, noreturn))
-int ____ilog2_NaN(void);
+/* Deal with unrepresentable constant logarithms. */
+extern __attribute__((noreturn)) int ____ilog2_NaN(void);
 
 /*
  * non-constant log of base 2 calculators
