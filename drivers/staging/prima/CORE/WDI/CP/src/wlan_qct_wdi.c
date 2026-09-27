@@ -971,7 +971,8 @@ void
 WDI_CopyWDIStaCtxToHALStaCtx
 (
   tConfigStaParams*          phalConfigSta,
-  WDI_ConfigStaReqInfoType*  pwdiConfigSta
+  WDI_ConfigStaReqInfoType*  pwdiConfigSta,
+  wpt_boolean               use_v1
 );
 
 /*Translate a Rate set info from WDI into HAL*/
@@ -1003,7 +1004,8 @@ WPT_STATIC WPT_INLINE void
 WDI_CopyWDIConfigBSSToHALConfigBSS
 (
   tConfigBssParams*         phalConfigBSS,
-  WDI_ConfigBSSReqInfoType* pwdiConfigBSS
+  WDI_ConfigBSSReqInfoType* pwdiConfigBSS,
+  wpt_boolean               use_v1
 );
 
 /*Extract the request CB function and user data from a request structure
@@ -8861,11 +8863,11 @@ WDI_ProcessConfigBSSReq
 #ifdef WLAN_FEATURE_11AC
   if (WDI_getFwWlanFeatCaps(DOT11AC))
     WDI_CopyWDIConfigBSSToHALConfigBSS( (tConfigBssParams*)&halConfigBssReqMsg.uBssParams.configBssParams_V1,
-                                        &pwdiConfigBSSParams->wdiReqInfo);
+                                        &pwdiConfigBSSParams->wdiReqInfo, eWLAN_PAL_TRUE);
   else
 #endif
   WDI_CopyWDIConfigBSSToHALConfigBSS( &halConfigBssReqMsg.uBssParams.configBssParams,
-                                      &pwdiConfigBSSParams->wdiReqInfo);
+                                      &pwdiConfigBSSParams->wdiReqInfo, eWLAN_PAL_FALSE);
 
   /* Need to fill in the STA Index to invalid, since at this point we have not
      yet received it from HAL */
@@ -9160,6 +9162,7 @@ WDI_ProcessPostAssocReq
 
   wpalMutexRelease(&pWDICtx->wptMutex);
 
+  /* WDI_POST_ASSOC_REQ carries version 0 STA and BSS wire structures. */
   uMsgSize = sizeof(halPostAssocReqMsg.postAssocReqParams.configStaParams) +
              sizeof(halPostAssocReqMsg.postAssocReqParams.configBssParams) ;
   /*-----------------------------------------------------------------------
@@ -9178,7 +9181,7 @@ WDI_ProcessPostAssocReq
 
   /*Copy the STA parameters */
   WDI_CopyWDIStaCtxToHALStaCtx(&halPostAssocReqMsg.postAssocReqParams.configStaParams,
-                               &pwdiPostAssocParams->wdiSTAParams );
+                               &pwdiPostAssocParams->wdiSTAParams, eWLAN_PAL_FALSE);
 
   /* Need to fill in the self STA Index */
   if ( WDI_STATUS_SUCCESS !=
@@ -9201,7 +9204,7 @@ WDI_ProcessPostAssocReq
 
   /*Copy the BSS parameters */
   WDI_CopyWDIConfigBSSToHALConfigBSS( &halPostAssocReqMsg.postAssocReqParams.configBssParams,
-                                      &pwdiPostAssocParams->wdiBSSParams);
+                                      &pwdiPostAssocParams->wdiBSSParams, eWLAN_PAL_FALSE);
 
   /* Need to fill in the STA index of the peer */
   if ( WDI_STATUS_SUCCESS !=
@@ -12334,7 +12337,8 @@ WDI_ProcessConfigStaReq
 
   /*Copy the station context*/
   WDI_CopyWDIStaCtxToHALStaCtx( &halConfigStaReqMsg.uStaParams.configStaParams,
-                                &pwdiConfigSTAParams->wdiReqInfo);
+                                &pwdiConfigSTAParams->wdiReqInfo,
+                                WDI_getFwWlanFeatCaps(DOT11AC));
 
   if(pwdiConfigSTAParams->wdiReqInfo.wdiSTAType == WDI_STA_ENTRY_SELF)
   {
@@ -25014,14 +25018,15 @@ void
 WDI_CopyWDIStaCtxToHALStaCtx
 (
   tConfigStaParams*          phalConfigSta,
-  WDI_ConfigStaReqInfoType*  pwdiConfigSta
+  WDI_ConfigStaReqInfoType*  pwdiConfigSta,
+  wpt_boolean               use_v1
 )
 {
    wpt_uint8 i;
 #ifdef WLAN_FEATURE_11AC
    /* Get the Version 1 Handler */
    tConfigStaParams_V1* phalConfigSta_V1 = NULL;
-   if (WDI_getFwWlanFeatCaps(DOT11AC))
+   if (use_v1)
    {
       phalConfigSta_V1 = (tConfigStaParams_V1*)phalConfigSta;
    }
@@ -25200,7 +25205,8 @@ WPT_STATIC WPT_INLINE void
 WDI_CopyWDIConfigBSSToHALConfigBSS
 (
   tConfigBssParams*         phalConfigBSS,
-  WDI_ConfigBSSReqInfoType* pwdiConfigBSS
+  WDI_ConfigBSSReqInfoType* pwdiConfigBSS,
+  wpt_boolean               use_v1
 )
 {
 
@@ -25208,7 +25214,7 @@ WDI_CopyWDIConfigBSSToHALConfigBSS
 #ifdef WLAN_FEATURE_11AC
   /* Get the Version 1 Handler */
   tConfigBssParams_V1* phalConfigBSS_V1 = NULL;
-  if (WDI_getFwWlanFeatCaps(DOT11AC))
+  if (use_v1)
      phalConfigBSS_V1 = (tConfigBssParams_V1*)phalConfigBSS;
 #endif
 
@@ -25269,7 +25275,7 @@ WDI_CopyWDIConfigBSSToHALConfigBSS
                  phalConfigBSS->ssId.length);
 
   WDI_CopyWDIStaCtxToHALStaCtx( &phalConfigBSS->staContext,
-                                &pwdiConfigBSS->wdiSTAContext);
+                                &pwdiConfigBSS->wdiSTAContext, use_v1);
 
   WDI_CopyWDIRateSetToHALRateSet( &phalConfigBSS->rateSet,
                                   &pwdiConfigBSS->wdiRateSet);
