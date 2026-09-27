@@ -402,7 +402,7 @@ static int smd_tty_port_activate(struct tty_port *tport,
 	const char *peripheral = NULL;
 
 
-	if (n >= MAX_SMD_TTYS || !smd_tty[n].ch_name)
+	if (n >= MAX_SMD_TTYS || !smd_tty[n].ch_name[0])
 		return -ENODEV;
 
 	info = smd_tty + n;
@@ -690,7 +690,7 @@ static int smd_tty_dummy_probe(struct platform_device *pdev)
 	int n;
 
 	for (n = 0; n < MAX_SMD_TTYS; ++n) {
-		if (!smd_tty[n].dev_name)
+		if (!smd_tty[n].dev_name[0])
 			continue;
 
 		if (pdev->id == smd_tty[n].edge &&
