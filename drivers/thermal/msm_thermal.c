@@ -1353,16 +1353,24 @@ static void __ref check_temp(struct work_struct *work)
 			limit_init = 1;
 	}
 
-	do_core_control(temp);
-	do_vdd_restriction();
-	do_psm();
-	do_ocr();
+	/*
+	 * Interrupt mode's trip-based kthreads (do_hotplug(), do_freq_mitigation(),
+	 * do_thermal_monitor()) replace these four once polling_enabled drops to
+	 * 0; running both would manage the same rails/cores from two places.
+	 * do_freq_control()'s qcom,limit-temp ceiling has no such replacement
+	 * (see disable_msm_thermal()), so it always runs.
+	 */
+	if (polling_enabled) {
+		do_core_control(temp);
+		do_vdd_restriction();
+		do_psm();
+		do_ocr();
+	}
 	do_freq_control(temp);
 
 reschedule:
-	if (polling_enabled)
-		schedule_delayed_work(&check_temp_work,
-				msecs_to_jiffies(msm_thermal_info.poll_ms));
+	schedule_delayed_work(&check_temp_work,
+			msecs_to_jiffies(msm_thermal_info.poll_ms));
 }
 
 static int __ref msm_thermal_cpu_callback(struct notifier_block *nfb,
@@ -1883,8 +1891,17 @@ static void __ref disable_msm_thermal(void)
 {
 	uint32_t cpu = 0;
 
-	/* make sure check_temp is no longer running */
-	cancel_delayed_work_sync(&check_temp_work);
+	/*
+	 * check_temp_work stays scheduled: interrupt mode's trip-based
+	 * hotplug_init()/freq_mitigation_init()/thermal_monitor_init()
+	 * below replace do_core_control(), do_vdd_restriction(), do_psm()
+	 * and do_ocr(), but qcom,limit-temp's do_freq_control() step has no
+	 * interrupt-mode equivalent (freq_mitigation_init() only wires
+	 * qcom,freq-mitigation-temp, a separate, higher threshold). check_temp()
+	 * itself gates the four superseded calls on polling_enabled and always
+	 * runs do_freq_control(), so cancelling the work here would silently
+	 * disable the qcom,limit-temp ceiling on every boot.
+	 */
 
 	get_online_cpus();
 	for_each_possible_cpu(cpu) {
@@ -3185,6 +3202,12 @@ fail:
 
 static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 {
+	/*
+	 * check_temp_work now stays scheduled across interrupt_mode_init()
+	 * (see disable_msm_thermal()), so teardown is the only remaining
+	 * place that cancels it.
+	 */
+	cancel_delayed_work_sync(&check_temp_work);
 	msm_thermal_ioctl_cleanup();
 	if (thresh) {
 		if (vdd_rstr_enabled)
