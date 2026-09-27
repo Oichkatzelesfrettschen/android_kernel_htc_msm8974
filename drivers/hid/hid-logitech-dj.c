@@ -218,10 +218,10 @@ static void logi_dj_recv_add_djhid_device(struct dj_receiver_dev *djrcv_dev,
 	struct hid_device *dj_hiddev;
 	struct dj_device *dj_dev;
 
-	/* Device index goes from 1 to 6, we need 3 bytes to store the
-	 * semicolon, the index, and a null terminator
+	/* The report validates indices 1 through 6; the buffer also holds
+	 * every decimal value of the report's unsigned byte field.
 	 */
-	unsigned char tmpstr[3];
+	char tmpstr[5];
 
 	if (dj_report->report_params[DEVICE_PAIRED_PARAM_SPFUNCTION] &
 	    SPFUNCTION_DEVICE_LIST_EMPTY) {
