@@ -20,7 +20,7 @@
 #include "msm_vidc_debug.h"
 #include "vidc_hfi.h"
 
-static enum vidc_status hfi_map_err_status(int hfi_err)
+static enum vidc_status __hfi_map_err_status(int hfi_err, const char *caller)
 {
 	enum vidc_status vidc_err;
 	switch (hfi_err) {
@@ -76,9 +76,25 @@ static enum vidc_status hfi_map_err_status(int hfi_err)
 		break;
 	}
 	if (vidc_err != HFI_ERR_NONE)
-		dprintk(VIDC_ERR, "HFI Error: %d\n", vidc_err);
+		dprintk(VIDC_ERR, "HFI Error: %d (raw 0x%x) from %s\n",
+			vidc_err, (unsigned int)hfi_err, caller);
 	return vidc_err;
 }
+
+/*
+ * hfi_map_err_status() logs one line per non-success HFI response, from
+ * every hfi_process_session_*_done()/hfi_process_sys_*_done() handler
+ * below; the response's own name is the HFI_MSG_SESSION_* or
+ * HFI_MSG_SYS_* command it answers (msm_v4l2_vidc.c, "Q6 hfi device
+ * probe called"; vidc_hfi_helper.h names the packet types). Without it,
+ * "HFI Error: %d" names only the mapped enum vidc_status, and a repeat
+ * HFI_ERR_SESSION_INCORRECT_STATE_OPERATION (VIDC_ERR_BAD_STATE,
+ * 0x80000006) during camera recording (htc-workbench PR #32-35,
+ * MPEG4Writer video track stopped with an error, cameraserver
+ * CAMERA_ERROR_SERVER_DIED) cannot be tied to the specific session
+ * command the firmware rejected as out of sequence.
+ */
+#define hfi_map_err_status(err) __hfi_map_err_status((err), __func__)
 
 static int validate_session_pkt(struct list_head *sessions,
 		struct hal_session *sess, struct mutex *session_lock)
