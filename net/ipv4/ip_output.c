@@ -511,11 +511,21 @@ int ip_fragment(struct sk_buff *skb, int (*output)(struct sk_buff *))
 	 */
 
 	hlen = iph->ihl * 4;
-	mtu = dst_mtu(&rt->dst) - hlen;	/* Size of data space */
+	mtu = dst_mtu(&rt->dst);
 #ifdef CONFIG_BRIDGE_NETFILTER
-	if (skb->nf_bridge)
+	if (skb->nf_bridge) {
+		if (mtu < nf_bridge_mtu_reduction(skb)) {
+			err = -EMSGSIZE;
+			goto fail;
+		}
 		mtu -= nf_bridge_mtu_reduction(skb);
+	}
 #endif
+	if (mtu < hlen + 8) {
+		err = -EMSGSIZE;
+		goto fail;
+	}
+	mtu -= hlen;	/* Size of data space */
 	IPCB(skb)->flags |= IPSKB_FRAG_COMPLETE;
 
 	/* When frag_list is given, use it. First, check its validity:
