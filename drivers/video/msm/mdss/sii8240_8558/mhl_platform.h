@@ -1,4 +1,4 @@
-#if !defined(HTCPLATFORM_H)
+#ifndef HTC_PLATFORM_H
 #define HTC_PLATFORM_H
 #include <mach/board.h>
 
