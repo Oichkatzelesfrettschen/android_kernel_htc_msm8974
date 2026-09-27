@@ -461,7 +461,7 @@ static void (*clsh_state_fp[NUM_CLSH_STATES])(struct snd_soc_codec *,
 static const char *state_to_str(u8 state, char *buf, size_t buflen)
 {
 	int i;
-	int cnt = 0;
+	size_t len = 0;
 	/*
 	 * This array of strings should match with enum wcd9xxx_clsh_state_bit.
 	 */
@@ -472,25 +472,24 @@ static const char *state_to_str(u8 state, char *buf, size_t buflen)
 		"STATE_LO",
 	};
 
+	if (!buflen)
+		return buf;
 	if (state == WCD9XXX_CLSH_STATE_IDLE) {
-		snprintf(buf, buflen, "[STATE_IDLE]");
-		goto done;
+		scnprintf(buf, buflen, "[STATE_IDLE]");
+		return buf;
 	}
 
 	buf[0] = '\0';
 	for (i = 0; i < ARRAY_SIZE(states); i++) {
 		if (!(state & (1 << i)))
 			continue;
-		cnt = snprintf(buf, buflen - cnt - 1, "%s%s%s", buf,
-			       buf[0] == '\0' ? "[" : "|",
-			       states[i]);
+		len += scnprintf(buf + len, buflen - len, "%s%s",
+				 len ? "|" : "[", states[i]);
 	}
-	if (cnt > 0)
-		strlcat(buf + cnt, "]", buflen);
-
-done:
-	if (buf[0] == '\0')
-		snprintf(buf, buflen, "[STATE_UNKNOWN]");
+	if (len)
+		scnprintf(buf + len, buflen - len, "]");
+	else
+		scnprintf(buf, buflen, "[STATE_UNKNOWN]");
 	return buf;
 }
 
