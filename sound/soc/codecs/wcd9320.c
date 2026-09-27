@@ -302,7 +302,6 @@ static const DECLARE_TLV_DB_SCALE(digital_gain, 0, 1, 0);
 static const DECLARE_TLV_DB_SCALE(line_gain, 0, 7, 1);
 static const DECLARE_TLV_DB_SCALE(analog_gain, 0, 25, 1);
 static struct snd_soc_dai_driver taiko_dai[];
-static const DECLARE_TLV_DB_SCALE(aux_pga_gain, 0, 2, 0);
 
 /* Codec supports 2 IIR filters */
 enum {
@@ -1135,11 +1134,6 @@ static int taiko_config_compander(struct snd_soc_dapm_widget *w,
 static const char *const taiko_anc_func_text[] = {"OFF", "ON"};
 static const struct soc_enum taiko_anc_func_enum =
 		SOC_ENUM_SINGLE_EXT(2, taiko_anc_func_text);
-
-static const char *const tabla_ear_pa_gain_text[] = {"POS_6_DB", "POS_2_DB"};
-static const struct soc_enum tabla_ear_pa_gain_enum[] = {
-		SOC_ENUM_SINGLE_EXT(2, tabla_ear_pa_gain_text),
-};
 
 /*cut of frequency for high pass filter*/
 static const char * const cf_text[] = {
@@ -6935,6 +6929,7 @@ static void taiko_cleanup_irqs(struct taiko_priv *taiko)
 
 	wcd9xxx_free_irq(core_res, WCD9XXX_IRQ_SLIMBUS, taiko);
 }
+#if 0
 static
 struct firmware_cal *taiko_get_hwdep_fw_cal(struct snd_soc_codec *codec,
 			enum wcd_cal_type type)
@@ -6956,6 +6951,7 @@ struct firmware_cal *taiko_get_hwdep_fw_cal(struct snd_soc_codec *codec,
 
 	return hwdep_cal;
 }
+#endif
 
 int taiko_hs_detect(struct snd_soc_codec *codec,
 		    struct wcd9xxx_mbhc_config *mbhc_cfg)
@@ -7017,6 +7013,7 @@ static int taiko_device_down(struct wcd9xxx *wcd9xxx)
 	return 0;
 }
 
+#if 0
 static int wcd9xxx_prepare_static_pa(struct wcd9xxx_mbhc *mbhc,
 				     struct list_head *lh)
 {
@@ -7224,6 +7221,7 @@ static const struct wcd9xxx_mbhc_intr cdc_intr_ids = {
 	.hph_right_ocp = WCD9XXX_IRQ_HPH_PA_OCPR_FAULT,
 	.hs_jack_switch = WCD9320_IRQ_MBHC_JACK_SWITCH,
 };
+#endif
 
 static int taiko_post_reset_cb(struct wcd9xxx *wcd9xxx)
 {
