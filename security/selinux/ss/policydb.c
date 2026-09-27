@@ -519,6 +519,7 @@ static inline void hash_eval(struct hashtab *h, char *hash_name)
 static int policydb_index(struct policydb *p)
 {
 	int i, rc;
+	u32 bool_value;
 
 	printk(KERN_DEBUG "SELinux:  %d users, %d roles, %d types, %d bools",
 	       p->p_users.nprim, p->p_roles.nprim, p->p_types.nprim, p->p_bools.nprim);
@@ -591,6 +592,16 @@ static int policydb_index(struct policydb *p)
 		if (rc)
 			goto out;
 	}
+
+	for (bool_value = 0; bool_value < p->p_bools.nprim; bool_value++) {
+		if (!p->bool_val_to_struct[bool_value]) {
+			pr_err("SELinux: boolean %u is declared but not defined\n",
+			       bool_value + 1);
+			rc = -EINVAL;
+			goto out;
+		}
+	}
+
 	rc = 0;
 out:
 	return rc;
