@@ -436,10 +436,10 @@ struct usb_diag_ch *usb_diag_open(const char *name, void *priv,
 		void (*notify)(void *, unsigned, struct diag_request *))
 {
 	struct usb_diag_ch *ch;
-	struct diag_context *ctxt;
 	unsigned long flags;
 	int found = 0;
 #if DIAG_XPST
+	struct diag_context *ctxt = get_modem_ctxt();
 	static int xpst_initialized;
 #endif
 
