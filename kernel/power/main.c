@@ -86,11 +86,9 @@ touch_event_show(struct kobject *kobj,
 		 struct kobj_attribute *attr, char *buf)
 {
 	if (tc_ev_processed == 0)
-		return snprintf(buf, strnlen("touch_event", MAX_BUF) + 1,
-				"touch_event");
+		return sprintf(buf, "touch_event");
 	else
-		return snprintf(buf, strnlen("null", MAX_BUF) + 1,
-				"null");
+		return sprintf(buf, "null");
 }
 
 static ssize_t

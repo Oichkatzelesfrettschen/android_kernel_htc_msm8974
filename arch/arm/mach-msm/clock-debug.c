@@ -190,7 +190,7 @@ static int fmax_rates_show(struct seq_file *m, void *unused)
 	struct clk *clock = m->private;
 	struct clk_vdd_class *vdd_class = clock->vdd_class;
 	int level = 0, i, nregs = vdd_class->num_regulators;
-	char reg_name[10];
+	char reg_name[16];
 
 	int vdd_level = find_vdd_level(clock, clock->rate);
 	if (vdd_level < 0) {
@@ -201,7 +201,7 @@ static int fmax_rates_show(struct seq_file *m, void *unused)
 
 	seq_printf(m, "%12s", "");
 	for (i = 0; i < nregs; i++) {
-		snprintf(reg_name, ARRAY_SIZE(reg_name), "reg %d", i);
+		snprintf(reg_name, sizeof(reg_name), "reg %d", i);
 		seq_printf(m, "%10s", reg_name);
 		if (vdd_class->vdd_ua)
 			seq_printf(m, "%10s", "");

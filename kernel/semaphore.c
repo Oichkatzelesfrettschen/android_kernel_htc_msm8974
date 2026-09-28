@@ -201,6 +201,11 @@ struct semaphore_waiter {
  * constant, and thus optimised away by the compiler.  Likewise the
  * 'timeout' parameter for the cases without timeouts.
  */
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+/* __up unlinks the waiter before waking it; both failure paths unlink it. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
 static inline int __sched __down_common(struct semaphore *sem, long state,
 								long timeout)
 {
@@ -232,6 +237,9 @@ static inline int __sched __down_common(struct semaphore *sem, long state,
 	list_del(&waiter.list);
 	return -EINTR;
 }
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+#pragma GCC diagnostic pop
+#endif
 
 static noinline void __sched __down(struct semaphore *sem)
 {

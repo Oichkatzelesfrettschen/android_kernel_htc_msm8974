@@ -66,7 +66,7 @@ struct cable_detect_info {
 	__u8 accessory_type;
 	int idpin_irq;
 	u8 mfg_usb_carkit_enable;
-	u8 mhl_reset_gpio;
+	int mhl_reset_gpio;
 	bool mhl_version_ctrl_flag;
 	struct workqueue_struct *cable_detect_wq;
 	struct delayed_work cable_detect_work;
@@ -316,9 +316,10 @@ static void check_vbus_in(struct work_struct *w)
 
 		if (pInfo->ad_en_gpio) {
 			if (vbus) {
-				if (pInfo->ad_en_irq)
+				if (pInfo->ad_en_irq) {
 					CABLE_INFO("%s: Enable ad_en_irq ++\n", __func__);
 					enable_irq(pInfo->ad_en_irq);
+				}
 			} else {
 					CABLE_INFO("%s: Disable ad_en_irq --\n", __func__);
 					disable_irq_nosync(pInfo->ad_en_irq);

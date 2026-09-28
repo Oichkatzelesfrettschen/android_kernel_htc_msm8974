@@ -212,7 +212,7 @@ static int diag_dci_get_buffer(struct diag_dci_client_tbl *client,
 	return -EIO;
 }
 
-void diag_dci_wakeup_clients()
+void diag_dci_wakeup_clients(void)
 {
 	struct list_head *start, *temp;
 	struct diag_dci_client_tbl *entry = NULL;
@@ -744,6 +744,8 @@ void extract_dci_events(unsigned char *buf, int len, int data_source)
 	struct list_head *start, *temp;
 	struct diag_dci_client_tbl *entry = NULL;
 
+	BUILD_BUG_ON(MAX_EVENT_SIZE < 13 + U8_MAX);
+
 	if (!buf) {
 		pr_err("diag: In %s buffer is NULL\n", __func__);
 		return;
@@ -802,8 +804,7 @@ void extract_dci_events(unsigned char *buf, int len, int data_source)
 						__func__, len, temp_len);
 				return;
 			}
-			if ((payload_len < (MAX_EVENT_SIZE - 13)) &&
-			((temp_len + timestamp_len + payload_len + 3) <= len)) {
+			if ((temp_len + timestamp_len + payload_len + 3) <= len) {
 				/*
 				 * Copy the payload length and the payload
 				 * after skipping temp_len bytes for already
@@ -815,8 +816,9 @@ void extract_dci_events(unsigned char *buf, int len, int data_source)
 				memcpy(event_data + 13, buf + temp_len + 2 +
 					timestamp_len + 1, payload_len);
 			} else {
-				pr_err("diag: event > %d, payload_len = %d, temp_len = %d\n",
-				(MAX_EVENT_SIZE - 13), payload_len, temp_len);
+				pr_err("diag: event exceeds packet length %d, "
+				       "payload_len = %d, temp_len = %d\n",
+				len, payload_len, temp_len);
 				return;
 			}
 		} else {
@@ -827,13 +829,13 @@ void extract_dci_events(unsigned char *buf, int len, int data_source)
 			 * for already parsed packet, timestamp_len for
 			 * timestamp buffer, 2 bytes for event_id_packet.
 			 */
-			if ((payload_len < (MAX_EVENT_SIZE - 12)) &&
-			((temp_len + timestamp_len + payload_len + 2) <= len))
+			if ((temp_len + timestamp_len + payload_len + 2) <= len)
 				memcpy(event_data + 12, buf + temp_len + 2 +
 						timestamp_len, payload_len);
 			else {
-				pr_err("diag: event > %d, payload_len = %d, temp_len = %d\n",
-				(MAX_EVENT_SIZE - 12), payload_len, temp_len);
+				pr_err("diag: event exceeds packet length %d, "
+				       "payload_len = %d, temp_len = %d\n",
+				len, payload_len, temp_len);
 				return;
 			}
 		}
@@ -1561,7 +1563,7 @@ int diag_process_dci_transaction(unsigned char *buf, int len)
 }
 
 
-struct diag_dci_client_tbl *diag_dci_get_client_entry()
+struct diag_dci_client_tbl *diag_dci_get_client_entry(void)
 {
 	return __diag_dci_get_client_entry(current->tgid);
 }
@@ -1593,7 +1595,7 @@ void update_dci_cumulative_event_mask(int offset, uint8_t byte_mask)
 	mutex_unlock(&dci_event_mask_mutex);
 }
 
-void diag_dci_invalidate_cumulative_event_mask()
+void diag_dci_invalidate_cumulative_event_mask(void)
 {
 	int i = 0;
 	struct list_head *start, *temp;
@@ -1611,7 +1613,7 @@ void diag_dci_invalidate_cumulative_event_mask()
 	mutex_unlock(&dci_event_mask_mutex);
 }
 
-int diag_send_dci_event_mask()
+int diag_send_dci_event_mask(void)
 {
 	void *buf = driver->buf_event_mask_update;
 	int header_size = sizeof(struct diag_ctrl_event_mask);
@@ -1689,7 +1691,7 @@ void update_dci_cumulative_log_mask(int offset, unsigned int byte_index,
 	mutex_unlock(&dci_log_mask_mutex);
 }
 
-void diag_dci_invalidate_cumulative_log_mask()
+void diag_dci_invalidate_cumulative_log_mask(void)
 {
 	int i = 0;
 	struct list_head *start, *temp;
@@ -1707,7 +1709,7 @@ void diag_dci_invalidate_cumulative_log_mask()
 	mutex_unlock(&dci_log_mask_mutex);
 }
 
-int diag_send_dci_log_mask()
+int diag_send_dci_log_mask(void)
 {
 	void *buf = driver->buf_log_mask_update;
 	int header_size = sizeof(struct diag_ctrl_log_mask);
@@ -1952,7 +1954,7 @@ void diag_dci_exit(void)
 	destroy_workqueue(driver->diag_dci_wq);
 }
 
-int diag_dci_clear_log_mask()
+int diag_dci_clear_log_mask(void)
 {
 	int j, k, err = DIAG_DCI_NO_ERROR;
 	uint8_t *log_mask_ptr, *update_ptr;
@@ -1992,7 +1994,7 @@ int diag_dci_clear_log_mask()
 	return err;
 }
 
-int diag_dci_clear_event_mask()
+int diag_dci_clear_event_mask(void)
 {
 	int j, err = DIAG_DCI_NO_ERROR;
 	uint8_t *event_mask_ptr, *update_ptr;
@@ -2036,7 +2038,7 @@ int diag_dci_query_event_mask(uint16_t event_id)
 					   event_id);
 }
 
-uint8_t diag_dci_get_cumulative_real_time()
+uint8_t diag_dci_get_cumulative_real_time(void)
 {
 	uint8_t real_time = MODE_NONREALTIME;
 	struct list_head *start, *temp;
@@ -2064,7 +2066,7 @@ int diag_dci_set_real_time(uint8_t real_time)
 	return 1;
 }
 
-void diag_dci_try_activate_wakeup_source()
+void diag_dci_try_activate_wakeup_source(void)
 {
 	spin_lock_irqsave(&ws_lock, ws_lock_flags);
 	pm_wakeup_event(driver->diag_dev, DCI_WAKEUP_TIMEOUT);
@@ -2072,7 +2074,7 @@ void diag_dci_try_activate_wakeup_source()
 	spin_unlock_irqrestore(&ws_lock, ws_lock_flags);
 }
 
-void diag_dci_try_deactivate_wakeup_source()
+void diag_dci_try_deactivate_wakeup_source(void)
 {
 	spin_lock_irqsave(&ws_lock, ws_lock_flags);
 	pm_relax(driver->diag_dev);
@@ -2199,7 +2201,7 @@ fail_alloc:
 	return DIAG_DCI_NO_REG;
 }
 
-int diag_dci_deinit_client()
+int diag_dci_deinit_client(void)
 {
 	int ret = DIAG_DCI_NO_ERROR, real_time = MODE_REALTIME, i, peripheral;
 	struct diag_dci_buf_peripheral_t *proc_buf = NULL;

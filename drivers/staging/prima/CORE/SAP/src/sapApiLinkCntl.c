@@ -825,7 +825,7 @@ eHalStatus sapCheck40Mhz24G(tHalHandle halHandle, ptSapContext psapCtx,
             goto NextResult;
         }
 
-        if ((pScanResult->BssDescriptor.ieFields != NULL))
+        if (pScanResult->BssDescriptor.length)
         {
             ieLen = (pScanResult->BssDescriptor.length + sizeof(tANI_U16));
             ieLen += (sizeof(tANI_U32) - sizeof(tSirBssDescription));

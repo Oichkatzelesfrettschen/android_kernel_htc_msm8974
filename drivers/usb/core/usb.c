@@ -372,10 +372,24 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 	struct usb_device *dev;
 	struct usb_hcd *usb_hcd = container_of(bus, struct usb_hcd, self);
 	unsigned root_hub = 0;
+	int path_length;
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return NULL;
+	if (parent) {
+		if (parent->devpath[0] == '0')
+			path_length = snprintf(dev->devpath,
+					sizeof(dev->devpath), "%u", port1);
+		else
+			path_length = snprintf(dev->devpath,
+					sizeof(dev->devpath), "%s.%u",
+					parent->devpath, port1);
+		if (path_length < 0 || path_length >= sizeof(dev->devpath)) {
+			kfree(dev);
+			return NULL;
+		}
+	}
 
 	if (!usb_get_hcd(bus_to_hcd(bus))) {
 		kfree(dev);
@@ -423,13 +437,9 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 	} else {
 		/* match any labeling on the hubs; it's one-based */
 		if (parent->devpath[0] == '0') {
-			snprintf(dev->devpath, sizeof dev->devpath,
-				"%d", port1);
 			/* Root ports are not counted in route string */
 			dev->route = 0;
 		} else {
-			snprintf(dev->devpath, sizeof dev->devpath,
-				"%s.%d", parent->devpath, port1);
 			/* Route string assumes hubs have less than 16 ports */
 			if (port1 < 15)
 				dev->route = parent->route +

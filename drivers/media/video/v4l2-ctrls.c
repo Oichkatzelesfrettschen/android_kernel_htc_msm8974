@@ -1158,6 +1158,8 @@ static int validate_new(const struct v4l2_ctrl *ctrl, struct v4l2_ext_control *c
 {
 	char *s = c->string;
 	size_t len;
+	s32 value;
+	int ret;
 
 	switch (ctrl->type) {
 	case V4L2_CTRL_TYPE_INTEGER:
@@ -1166,7 +1168,11 @@ static int validate_new(const struct v4l2_ctrl *ctrl, struct v4l2_ext_control *c
 	case V4L2_CTRL_TYPE_BITMASK:
 	case V4L2_CTRL_TYPE_BUTTON:
 	case V4L2_CTRL_TYPE_CTRL_CLASS:
-		return validate_new_int(ctrl, &c->value);
+		value = c->value;
+		ret = validate_new_int(ctrl, &value);
+		if (!ret)
+			c->value = value;
+		return ret;
 
 	case V4L2_CTRL_TYPE_INTEGER64:
 		return 0;

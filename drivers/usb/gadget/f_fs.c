@@ -354,7 +354,7 @@ struct ffs_epfile {
 
 	struct dentry			*dentry;
 
-	char				name[5];
+	char				name[16];
 
 	unsigned char			in;	/* P: ffs->eps_lock */
 	unsigned char			isoc;	/* P: ffs->eps_lock */
@@ -1234,8 +1234,8 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 			ret = copy_to_user((void *)value, desc, sizeof(*desc));
 			if (ret)
 				ret = -EFAULT;
-				return ret;
-			}
+			return ret;
+		}
 		default:
 			ret = -ENOTTY;
 		}
@@ -1735,8 +1735,8 @@ static int ffs_epfiles_create(struct ffs_data *ffs)
 		epfile->ffs = ffs;
 		mutex_init(&epfile->mutex);
 		init_waitqueue_head(&epfile->wait);
-		sprintf(epfiles->name, "ep%u",  i);
-		if (!unlikely(ffs_sb_create_file(ffs->sb, epfiles->name, epfile,
+		snprintf(epfile->name, sizeof(epfile->name), "ep%u", i);
+		if (!unlikely(ffs_sb_create_file(ffs->sb, epfile->name, epfile,
 						 &ffs_epfile_operations,
 						 &epfile->dentry))) {
 			ffs_epfiles_destroy(epfiles, i - 1);

@@ -480,9 +480,6 @@ static inline int __msm_remove_session_cmd_ack_q(void *d1, void *d2)
 {
 	struct msm_command_ack *cmd_ack = d1;
 
-	if (!(&cmd_ack->command_q))
-		return 0;
-
 	msm_queue_drain(&cmd_ack->command_q, struct msm_command, list);
 
 	return 0;
@@ -490,7 +487,7 @@ static inline int __msm_remove_session_cmd_ack_q(void *d1, void *d2)
 
 static void msm_remove_session_cmd_ack_q(struct msm_session *session)
 {
-	if ((!session) || !(&session->command_ack_q))
+	if (!session)
 		return;
 
 	mutex_lock(&session->lock);
@@ -796,17 +793,6 @@ static int msm_close(struct file *filep)
 	return rc;
 }
 
-static inline void msm_list_switch(struct list_head *l1,
-	struct list_head *l2)
-{
-	l1->next = l2->next;
-	l2->prev = l1->prev;
-	l1->prev->next = l2;
-	l2->next->prev = l1;
-	l1->prev = l2;
-	l2->next = l1;
-}
-
 static int msm_open(struct file *filep)
 {
 	int rc;
@@ -1006,8 +992,8 @@ static int __devinit msm_probe(struct platform_device *pdev)
 	if (WARN_ON(rc < 0))
 		goto media_fail;
 
-	if (WARN_ON((rc == media_entity_init(&pvdev->vdev->entity,
-			0, NULL, 0)) < 0))
+	rc = media_entity_init(&pvdev->vdev->entity, 0, NULL, 0);
+	if (WARN_ON(rc < 0))
 		goto entity_fail;
 
 	pvdev->vdev->entity.type = MEDIA_ENT_T_DEVNODE_V4L;

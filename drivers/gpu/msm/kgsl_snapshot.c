@@ -141,6 +141,7 @@ static int snapshot_os(struct kgsl_device *device,
 	int ctxtcount = 0;
 	int size = sizeof(*header);
 	phys_addr_t temp_ptbase;
+	uint32_t current_context = 0;
 
 	/* Figure out how many active contexts there are - these will
 	 * be appended on the end of the structure */
@@ -181,8 +182,9 @@ static int snapshot_os(struct kgsl_device *device,
 	header->busclk = kgsl_get_clkrate(pwr->ebi1_clk);
 
 	/* Save the last active context */
-	kgsl_sharedmem_readl(&device->memstore, &header->current_context,
+	kgsl_sharedmem_readl(&device->memstore, &current_context,
 		KGSL_MEMSTORE_OFFSET(KGSL_MEMSTORE_GLOBAL, current_context));
+	header->current_context = current_context;
 
 
 	/* Get the current PT base */
@@ -549,6 +551,7 @@ int kgsl_device_snapshot(struct kgsl_device *device, int hang)
 	int remain = device->snapshot_maxsize - sizeof(*header);
 	void *snapshot;
 	struct timespec boot;
+	unsigned int chipid = 0;
 	int ret = 0;
 
 	/*
@@ -594,7 +597,8 @@ int kgsl_device_snapshot(struct kgsl_device *device, int hang)
 
 	header->magic = SNAPSHOT_MAGIC;
 
-	header->gpuid = kgsl_gpuid(device, &header->chipid);
+	header->gpuid = kgsl_gpuid(device, &chipid);
+	header->chipid = chipid;
 
 	/* Get a pointer to the first section (right after the header) */
 	snapshot = ((void *) device->snapshot) + sizeof(*header);

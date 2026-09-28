@@ -1498,7 +1498,12 @@ static inline bool IS_INODE(struct page *page)
 
 static inline __le32 *blkaddr_in_node(struct f2fs_node *node)
 {
-	return RAW_IS_INODE(node) ? node->i.i_addr : node->dn.addr;
+	/* F2FS_NODE starts at a page boundary; both packed arrays stay aligned. */
+	BUILD_BUG_ON(offsetof(struct f2fs_node, i.i_addr) % sizeof(__le32));
+	BUILD_BUG_ON(offsetof(struct f2fs_node, dn.addr) % sizeof(__le32));
+	return (__le32 *)((char *)node + (RAW_IS_INODE(node) ?
+		offsetof(struct f2fs_node, i.i_addr) :
+		offsetof(struct f2fs_node, dn.addr)));
 }
 
 static inline block_t datablock_addr(struct page *node_page,

@@ -633,8 +633,11 @@ static inline size_t cpumask_size(void)
  * This code makes NR_CPUS length memcopy and brings to a memory corruption.
  * cpumask_copy() provide safe copy functionality.
  */
+/* Off-stack masks may be unallocated; inline masks always have storage. */
 #ifdef CONFIG_CPUMASK_OFFSTACK
 typedef struct cpumask *cpumask_var_t;
+
+#define cpumask_available(mask) ((mask) != NULL)
 
 bool alloc_cpumask_var_node(cpumask_var_t *mask, gfp_t flags, int node);
 bool alloc_cpumask_var(cpumask_var_t *mask, gfp_t flags);
@@ -646,6 +649,8 @@ void free_bootmem_cpumask_var(cpumask_var_t mask);
 
 #else
 typedef struct cpumask cpumask_var_t[1];
+
+#define cpumask_available(mask) true
 
 static inline bool alloc_cpumask_var(cpumask_var_t *mask, gfp_t flags)
 {

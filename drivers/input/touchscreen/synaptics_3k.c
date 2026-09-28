@@ -788,8 +788,8 @@ static int syn_config_update(struct synaptics_ts_data *ts, int attr)
 		}
 	}
 
-	if ((ts->config != NULL && (ts->config[0] << 24 | ts->config[1] << 16 |
-		ts->config[2] << 8 | ts->config[3]) == ts->config_version)) {
+	if (((uint32_t)ts->config[0] << 24 | ts->config[1] << 16 |
+		ts->config[2] << 8 | ts->config[3]) == ts->config_version) {
 		ret = crc_comparison(ts, crc_checksum, attr);
 		if (ret < 0) {
 			pr_debug("%s: CRC comparison fail!\n", __func__);
@@ -3118,7 +3118,8 @@ static int syn_get_version(struct synaptics_ts_data *ts)
 	ret = i2c_syn_read(ts->client, get_address_base(ts, 0x34, CONTROL_BASE), data, 4);
 	if (ret < 0)
 		return i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "r:4", __func__);
-	ts->config_version = data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3];
+	ts->config_version = (uint32_t)data[0] << 24 | data[1] << 16 |
+		data[2] << 8 | data[3];
 
 	pr_debug("%s:pk_id=%d, pk_num=%d, pl_ver=%x, cfg_ver=%x", __func__, ts->package_id,
 		ts->packrat_number, syn_panel_version, ts->config_version);

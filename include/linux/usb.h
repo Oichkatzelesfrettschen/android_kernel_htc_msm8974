@@ -1348,9 +1348,12 @@ struct urb {
 	int error_count;		/* (return) number of ISO errors */
 	void *context;			/* (in) context for completion */
 	usb_complete_t complete;	/* (in) completion routine */
-	struct usb_iso_packet_descriptor iso_frame_desc[0];
+	/* ISO descriptors and host BAM private data share the URB tail. */
+	union {
+		struct usb_iso_packet_descriptor iso_frame_desc[0];
 					/* (in) ISO ONLY */
-	void *priv_data;		/* (in) additional private data */
+		void *priv_data;	/* (in) additional private data */
+	};
 };
 
 /* ----------------------------------------------------------------------- */
