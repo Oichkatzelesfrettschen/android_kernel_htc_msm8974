@@ -246,9 +246,10 @@ static void do_input_hotplug_rem(struct work_struct *work)
 /*
  * Runs before the frequency loop below, so the cores it brings up receive
  * the input boost floor too. cpu_up() takes the hotplug lock itself and must
- * run outside get_online_cpus().
+ * run outside get_online_cpus(). cpu_up() is __cpuinit, which CONFIG_HOTPLUG_CPU
+ * keeps resident, so the reference is marked __ref as msm_thermal's are.
  */
-static void do_input_hotplug_hold(void)
+static void __ref do_input_hotplug_hold(void)
 {
 	unsigned int cpu;
 
