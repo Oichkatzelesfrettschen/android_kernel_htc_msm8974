@@ -220,8 +220,9 @@ __limHandleBeacon(tpAniSirGlobal pMac, tpSirMsgQ pMsg, tpPESession psessionEntry
     {
         schBeaconProcess(pMac, pRxPacketInfo, psessionEntry);
     }
-     else
+     else {
         limProcessBeaconFrame(pMac, pRxPacketInfo, psessionEntry);
+     }
 
         return;
 }

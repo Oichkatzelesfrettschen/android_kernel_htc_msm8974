@@ -1370,7 +1370,7 @@ void sapComputeSpectWeight( tSapChSelSpectInfo* pSpectInfoParams,
         vhtSupport = 0;
         centerFreq = 0;
 
-        if (pScanResult->BssDescriptor.ieFields != NULL)
+        if (pScanResult->BssDescriptor.length)
         {
             ieLen = (pScanResult->BssDescriptor.length + sizeof(tANI_U16) + sizeof(tANI_U32) - sizeof(tSirBssDescription));
             vos_mem_set((tANI_U8 *) pBeaconStruct, sizeof(tSirProbeRespBeacon), 0);
@@ -1425,10 +1425,10 @@ void sapComputeSpectWeight( tSapChSelSpectInfo* pSpectInfoParams,
                         case eHT_CHANNEL_WIDTH_40MHZ: //HT40
                             switch( secondaryChannelOffset)
                             {
-                                tSapSpectChInfo *pExtSpectCh = NULL;
                                 case PHY_DOUBLE_CHANNEL_LOW_PRIMARY: // Above the Primary Channel
-                                    pExtSpectCh = (pSpectCh + 1);
-                                    if(pExtSpectCh != NULL)
+                                {
+                                    tSapSpectChInfo *pExtSpectCh = pSpectCh + 1;
+                                    if (chn_num + 1 < pSpectInfoParams->numSpectChans)
                                     {
                                         ++pExtSpectCh->bssCount;
                                         rssi = pSpectCh->rssiAgr + SAP_SUBBAND1_RSSI_EFFECT_PRIMARY;
@@ -1440,11 +1440,13 @@ void sapComputeSpectWeight( tSapChSelSpectInfo* pSpectInfoParams,
                                         if(pExtSpectCh->rssiAgr < SOFTAP_MIN_RSSI)
                                             pExtSpectCh->rssiAgr = SOFTAP_MIN_RSSI;
                                     }
-                                break;
+                                    break;
+                                }
 
                                 case PHY_DOUBLE_CHANNEL_HIGH_PRIMARY: // Below the Primary channel
-                                    pExtSpectCh = (pSpectCh - 1);
-                                    if(pExtSpectCh != NULL) 
+                                {
+                                    tSapSpectChInfo *pExtSpectCh = pSpectCh - 1;
+                                    if (chn_num > 0)
                                     {
                                         rssi = pSpectCh->rssiAgr + SAP_SUBBAND1_RSSI_EFFECT_PRIMARY;
                                         if (IS_RSSI_VALID(pExtSpectCh->rssiAgr, rssi))
@@ -1455,7 +1457,8 @@ void sapComputeSpectWeight( tSapChSelSpectInfo* pSpectInfoParams,
                                             pExtSpectCh->rssiAgr = SOFTAP_MIN_RSSI;
                                         ++pExtSpectCh->bssCount;
                                     }
-                                break;
+                                    break;
+                                }
                             }
                         break;
                         case eHT_CHANNEL_WIDTH_80MHZ: // VHT80
@@ -2335,4 +2338,3 @@ v_U8_t sapSelectChannel(tHalHandle halHandle, ptSapContext pSapCtx,  tScanResult
     else
         return SAP_CHANNEL_NOT_SELECTED;
 }
-

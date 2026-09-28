@@ -10211,7 +10211,7 @@ static int wlan_hdd_cfg80211_update_bss( struct wiphy *wiphy,
          * ieee80211_mgmt(probe response) and passing to c
          * fg80211_inform_bss_frame.
          * */
-        if(is_p2p_scan && (pScanResult->ssId.ssId != NULL) &&
+        if(is_p2p_scan && pScanResult->ssId.length >= 7 &&
                 !vos_mem_compare( pScanResult->ssId.ssId, "DIRECT-", 7) )
         {
             pScanResult = sme_ScanResultGetNext(hHal, pResult);
@@ -11889,7 +11889,7 @@ int wlan_hdd_cfg80211_set_ie( hdd_adapter_t *pAdapter,
 
                    /* IBSS mode doesn't contain params->proberesp_ies still
                     beaconIE's need to be populated in probe response frames */
-                   if ( (NULL != (genie - 2)) && (0 != eLen + 2) )
+                   if (eLen > 0)
                    {
                       u16 rem_probe_resp_ie_len = eLen + 2;
                       u8 probe_rsp_ie_len[3] = {0};
@@ -17036,4 +17036,3 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops =
 #endif
      .dump_survey = wlan_hdd_cfg80211_dump_survey,
 };
-

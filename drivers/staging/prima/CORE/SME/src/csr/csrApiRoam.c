@@ -1689,7 +1689,7 @@ eHalStatus csrChangeDefaultConfigParam(tpAniSirGlobal pMac, tCsrConfigParam *pPa
 
         pMac->roam.configParam.fenableMCCMode = pParam->fEnableMCCMode;
         pMac->roam.configParam.fAllowMCCGODiffBI = pParam->fAllowMCCGODiffBI;
-        
+
         /* channelBondingMode5GHz plays a dual role right now
          * INFRA STA will use this non zero value as CB enabled and SOFTAP will use this non-zero value to determine the secondary channel offset
          * This is how channelBondingMode5GHz works now and this is kept intact to avoid any cfg.ini change
@@ -6467,8 +6467,6 @@ eHalStatus csrRoamCopyConnectedProfile(tpAniSirGlobal pMac, tANI_U32 sessionId, 
     do
     {
         vos_mem_set(pDstProfile, sizeof(tCsrRoamProfile), 0);
-        if(pSrcProfile->bssid)
-        {
             pDstProfile->BSSIDs.bssid = vos_mem_malloc(sizeof(tCsrBssid));
             if ( NULL == pDstProfile->BSSIDs.bssid )
                 status = eHAL_STATUS_FAILURE;
@@ -6486,9 +6484,7 @@ eHalStatus csrRoamCopyConnectedProfile(tpAniSirGlobal pMac, tANI_U32 sessionId, 
             pDstProfile->BSSIDs.numOfBSSIDs = 1;
             vos_mem_copy(pDstProfile->BSSIDs.bssid, pSrcProfile->bssid,
                          sizeof(tCsrBssid));
-        }
-        if(pSrcProfile->SSID.ssId)
-        {
+
             pDstProfile->SSIDs.SSIDList = vos_mem_malloc(sizeof(tCsrSSIDInfo));
             if ( NULL == pDstProfile->SSIDs.SSIDList )
                 status = eHAL_STATUS_FAILURE;
@@ -6508,7 +6504,6 @@ eHalStatus csrRoamCopyConnectedProfile(tpAniSirGlobal pMac, tANI_U32 sessionId, 
             pDstProfile->SSIDs.SSIDList[0].ssidHidden = pSrcProfile->ssidHidden;
             vos_mem_copy(&pDstProfile->SSIDs.SSIDList[0].SSID,
                          &pSrcProfile->SSID, sizeof(tSirMacSSid));
-        }
         if(pSrcProfile->nAddIEAssocLength)
         {
             pDstProfile->pAddIEAssoc = vos_mem_malloc(pSrcProfile->nAddIEAssocLength);
@@ -17988,13 +17983,18 @@ eHalStatus csrRoamStopJoinRetryTimer(tpAniSirGlobal pMac, tANI_U32 sessionId)
 */
 static void csrSerDesUnpackDiassocRsp(tANI_U8 *pBuf, tSirSmeDisassocRsp *pRsp)
 {
+   tANI_U16 transactionId;
+   tANI_U32 statusCode;
+
    if(pBuf && pRsp)
    {
       pBuf += 4; //skip type and length
       pRsp->sessionId  = *pBuf++;
-      pal_get_U16( pBuf, (tANI_U16 *)&pRsp->transactionId );
+      pal_get_U16(pBuf, &transactionId);
+      pRsp->transactionId = transactionId;
       pBuf += 2;
-      pal_get_U32( pBuf, (tANI_U32 *)&pRsp->statusCode );
+      pal_get_U32(pBuf, &statusCode);
+      pRsp->statusCode = statusCode;
       pBuf += 4;
       vos_mem_copy(pRsp->peerMacAddr, pBuf, 6);
    }
@@ -18271,4 +18271,3 @@ void csrGetStaticUapsdMask(tpAniSirGlobal pMac, tANI_U8 *staticUapsdMask)
     else
        *staticUapsdMask = pSession->pCurRoamProfile->uapsd_mask;
 }
-
