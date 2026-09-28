@@ -969,9 +969,11 @@ first_try:
 		/* Fire the request */
 		struct usb_request *req;
  		if (io_data->aio) {
- 			req = usb_ep_alloc_request(ep->ep, GFP_KERNEL);
- 			if (unlikely(!req))
- 				goto error;
+ 			req = usb_ep_alloc_request(ep->ep, GFP_ATOMIC);
+ 			if (unlikely(!req)) {
+				ret = -ENOMEM;
+				goto error_lock;
+			}
  			req->buf      = data;
  			req->length   = io_data->len;
 
@@ -985,7 +987,7 @@ first_try:
  			if (unlikely(ret)) {
 				io_data->req = NULL;
  				usb_ep_free_request(ep->ep, req);
- 				goto error;
+				goto error_lock;
  			}
  			ret = -EIOCBQUEUED;
 			spin_unlock_irq(&epfile->ffs->eps_lock);
@@ -1030,6 +1032,9 @@ first_try:
 
 	mutex_unlock(&epfile->mutex);
 	return ret;
+error_lock:
+	spin_unlock_irq(&epfile->ffs->eps_lock);
+	mutex_unlock(&epfile->mutex);
 error:
 	kfree(data);
 	return ret;
@@ -1104,6 +1109,7 @@ static ssize_t ffs_epfile_aio_write(struct kiocb *kiocb,
 				    unsigned long nr_segs, loff_t loff)
 {
 	struct ffs_io_data *io_data;
+	ssize_t res;
 	ENTER();
 	io_data = kmalloc(sizeof(*io_data), GFP_KERNEL);
 	if (unlikely(!io_data))
@@ -1117,7 +1123,13 @@ static ssize_t ffs_epfile_aio_write(struct kiocb *kiocb,
 	io_data->mm = current->mm;
 	kiocb->private = io_data;
 	kiocb->ki_cancel = ffs_aio_cancel;
-	return ffs_epfile_io(kiocb->ki_filp, io_data);
+	res = ffs_epfile_io(kiocb->ki_filp, io_data);
+	/* Only a queued request hands io_data to ffs_user_copy_worker(). */
+	if (res != -EIOCBQUEUED) {
+		kiocb->private = NULL;
+		kfree(io_data);
+	}
+	return res;
 }
 static ssize_t ffs_epfile_aio_read(struct kiocb *kiocb,
 				   const struct iovec *iovec,
@@ -1125,6 +1137,7 @@ static ssize_t ffs_epfile_aio_read(struct kiocb *kiocb,
 {
 	struct ffs_io_data *io_data;
 	struct iovec *iovec_copy;
+	ssize_t res;
 	ENTER();
 	iovec_copy = kmalloc_array(nr_segs, sizeof(*iovec_copy), GFP_KERNEL);
 	if (unlikely(!iovec_copy))
@@ -1144,7 +1157,14 @@ static ssize_t ffs_epfile_aio_read(struct kiocb *kiocb,
 	io_data->mm = current->mm;
 	kiocb->private = io_data;
 	kiocb->ki_cancel = ffs_aio_cancel;
-	return ffs_epfile_io(kiocb->ki_filp, io_data);
+	res = ffs_epfile_io(kiocb->ki_filp, io_data);
+	/* Only a queued request hands io_data to ffs_user_copy_worker(). */
+	if (res != -EIOCBQUEUED) {
+		kiocb->private = NULL;
+		kfree(io_data);
+		kfree(iovec_copy);
+	}
+	return res;
 }
 
 static int
