@@ -1038,7 +1038,9 @@ static void atkbd_set_device_attrs(struct atkbd *atkbd)
 			 atkbd->translated ? "Translated" : "Raw", atkbd->set);
 
 	snprintf(atkbd->phys, sizeof(atkbd->phys),
-		 "%s/input0", atkbd->ps2dev.serio->phys);
+		  "%.*s/input0", (int)(sizeof(atkbd->phys) -
+					    sizeof("/input0")),
+		  atkbd->ps2dev.serio->phys);
 
 	input_dev->name = atkbd->name;
 	input_dev->phys = atkbd->phys;
