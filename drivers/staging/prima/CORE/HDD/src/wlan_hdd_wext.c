@@ -4596,8 +4596,7 @@ static int __iw_set_encode(struct net_device *dev,
 
           for(i=0;i < CSR_MAX_NUM_KEY; i++) {
 
-             if(pWextState->roamProfile.Keys.KeyMaterial[i])
-                pWextState->roamProfile.Keys.KeyLength[i] = 0;
+             pWextState->roamProfile.Keys.KeyLength[i] = 0;
           }
        }
        pHddStaCtx->conn_info.authType =  eCSR_AUTH_TYPE_OPEN_SYSTEM;

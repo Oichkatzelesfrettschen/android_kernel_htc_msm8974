@@ -1298,4 +1298,3 @@ tSirAbortScanStatus hdd_abort_mac_scan(hdd_context_t* pHddCtx,
 {
     return sme_AbortMacScan(pHddCtx->hHal, sessionId, reason);
 }
-

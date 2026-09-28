@@ -17982,13 +17982,18 @@ eHalStatus csrRoamStopJoinRetryTimer(tpAniSirGlobal pMac, tANI_U32 sessionId)
 */
 static void csrSerDesUnpackDiassocRsp(tANI_U8 *pBuf, tSirSmeDisassocRsp *pRsp)
 {
+   tANI_U16 transactionId;
+   tANI_U32 statusCode;
+
    if(pBuf && pRsp)
    {
       pBuf += 4; //skip type and length
       pRsp->sessionId  = *pBuf++;
-      pal_get_U16( pBuf, (tANI_U16 *)&pRsp->transactionId );
+      pal_get_U16(pBuf, &transactionId);
+      pRsp->transactionId = transactionId;
       pBuf += 2;
-      pal_get_U32( pBuf, (tANI_U32 *)&pRsp->statusCode );
+      pal_get_U32(pBuf, &statusCode);
+      pRsp->statusCode = statusCode;
       pBuf += 4;
       vos_mem_copy(pRsp->peerMacAddr, pBuf, 6);
    }
