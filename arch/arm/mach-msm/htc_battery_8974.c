@@ -558,7 +558,7 @@ int htc_charger_event_notify(enum htc_charger_event event)
 	return 0;
 }
 
-static void cable_status_notifier_func(enum usb_connect_type online)
+static void cable_status_notifier_func(int online)
 {
 	static int first_update = 1;
 	mutex_lock(&cable_notifier_lock);
