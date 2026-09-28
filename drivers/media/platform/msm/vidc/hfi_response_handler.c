@@ -1134,12 +1134,8 @@ static void hfi_process_session_rel_buf_done(
 	cmd_done.session_id =
 		((struct hal_session *) pkt->session_id)->session_id;
 	cmd_done.status = hfi_map_err_status((u32)pkt->error_type);
-	if (pkt->rg_buffer_info) {
-		cmd_done.data = (void *) &pkt->rg_buffer_info;
-		cmd_done.size = sizeof(struct hfi_buffer_info);
-	} else {
-		dprintk(VIDC_ERR, "invalid payload in rel_buff_done\n");
-	}
+	cmd_done.data = (void *) &pkt->rg_buffer_info;
+	cmd_done.size = sizeof(struct hfi_buffer_info);
 	callback(SESSION_RELEASE_BUFFER_DONE, &cmd_done);
 }
 

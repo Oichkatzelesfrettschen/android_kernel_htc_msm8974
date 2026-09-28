@@ -108,7 +108,7 @@ struct msm_cp_pool_size {
 struct msm_scm_fault_regs_dump {
 	uint32_t dump_size;
 	uint32_t dump_data[SEC_DUMP_SIZE];
-} __packed;
+};
 
 void msm_iommu_sec_set_access_ops(struct iommu_access_ops *access_ops)
 {
@@ -298,7 +298,7 @@ static int msm_iommu_sec_ptbl_init(void)
 	} pinit;
 	unsigned int *buf;
 	int psize[2] = {0, 0};
-	unsigned int spare;
+	unsigned int spare = 0;
 	int ret, ptbl_ret = 0;
 	int version;
 
