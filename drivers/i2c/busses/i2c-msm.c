@@ -800,4 +800,3 @@ static void __exit msm_i2c_exit_driver(void)
 	platform_driver_unregister(&msm_i2c_driver);
 }
 module_exit(msm_i2c_exit_driver);
-
