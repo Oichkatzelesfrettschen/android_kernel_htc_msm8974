@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/time.h>
+#include <linux/rq_stats.h>
 
 struct cpu_sync {
 	struct task_struct *thread;
@@ -56,6 +57,18 @@ module_param(input_boost_freq, uint, 0644);
 
 static unsigned int input_boost_ms = 40;
 module_param(input_boost_ms, uint, 0644);
+
+/*
+ * Input hotplug hold: on input, bring every present CPU online and set
+ * RQ_HOTPLUG_DISABLE_INPUT so the userspace hotplug daemon leaves the online
+ * mask alone until input_boost_hotplug_ms after the last boosted event.
+ * msm_thermal's CPU_UP_PREPARE callback still vetoes a core that thermal core
+ * control has taken offline. 0 disables the hold.
+ */
+static unsigned int input_boost_hotplug_ms;
+module_param(input_boost_hotplug_ms, uint, 0644);
+
+static struct delayed_work input_hotplug_rem;
 
 static u64 last_input_time;
 #define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
@@ -225,11 +238,41 @@ static struct notifier_block boost_migration_nb = {
 	.notifier_call = boost_migration_notify,
 };
 
+static void do_input_hotplug_rem(struct work_struct *work)
+{
+	rq_hotplug_disable_set(RQ_HOTPLUG_DISABLE_INPUT, false);
+}
+
+/*
+ * Runs before the frequency loop below, so the cores it brings up receive
+ * the input boost floor too. cpu_up() takes the hotplug lock itself and must
+ * run outside get_online_cpus().
+ */
+static void do_input_hotplug_hold(void)
+{
+	unsigned int cpu;
+
+	cancel_delayed_work_sync(&input_hotplug_rem);
+	rq_hotplug_disable_set(RQ_HOTPLUG_DISABLE_INPUT, true);
+	for_each_present_cpu(cpu) {
+		if (!cpu_online(cpu))
+			cpu_up(cpu);
+	}
+	queue_delayed_work(cpu_boost_wq, &input_hotplug_rem,
+			   msecs_to_jiffies(input_boost_hotplug_ms));
+}
+
 static void do_input_boost(struct work_struct *work)
 {
 	unsigned int i, ret;
 	struct cpu_sync *i_sync_info;
 	struct cpufreq_policy policy;
+
+	if (input_boost_hotplug_ms)
+		do_input_hotplug_hold();
+
+	if (!input_boost_freq)
+		return;
 
 	get_online_cpus();
 	for_each_online_cpu(i) {
@@ -256,7 +299,7 @@ static void cpuboost_input_event(struct input_handle *handle,
 {
 	u64 now;
 
-	if (!input_boost_freq)
+	if (!input_boost_freq && !input_boost_hotplug_ms)
 		return;
 
 	now = ktime_to_us(ktime_get());
@@ -351,6 +394,7 @@ static int cpu_boost_init(void)
 		return -EFAULT;
 
 	INIT_WORK(&input_boost_work, do_input_boost);
+	INIT_DELAYED_WORK(&input_hotplug_rem, do_input_hotplug_rem);
 
 	for_each_possible_cpu(cpu) {
 		s = &per_cpu(sync_info, cpu);
