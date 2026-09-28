@@ -70,6 +70,15 @@ module_param(input_boost_hotplug_ms, uint, 0644);
 
 static struct delayed_work input_hotplug_rem;
 
+/*
+ * CPUs the hold brought online. mpdecision offlines only cores it onlined
+ * itself, judged by its own record of the mask, so a core left online by the
+ * hold stays up at idle indefinitely. The release takes these cores back down
+ * while RQ_HOTPLUG_DISABLE_INPUT still excludes the daemon, which returns the
+ * online mask to the one its record holds.
+ */
+static struct cpumask input_hotplug_cpus;
+
 static u64 last_input_time;
 #define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
 
@@ -238,8 +247,20 @@ static struct notifier_block boost_migration_nb = {
 	.notifier_call = boost_migration_notify,
 };
 
+/*
+ * Queued on CPU 0, which platform_cpu_disable() keeps online, so the release
+ * never runs on a core it takes down. do_input_hotplug_hold() cancels it
+ * synchronously before touching input_hotplug_cpus, which serializes the two.
+ */
 static void do_input_hotplug_rem(struct work_struct *work)
 {
+	unsigned int cpu;
+
+	for_each_cpu(cpu, &input_hotplug_cpus) {
+		if (cpu_online(cpu))
+			cpu_down(cpu);
+	}
+	cpumask_clear(&input_hotplug_cpus);
 	rq_hotplug_disable_set(RQ_HOTPLUG_DISABLE_INPUT, false);
 }
 
@@ -256,11 +277,11 @@ static void __ref do_input_hotplug_hold(void)
 	cancel_delayed_work_sync(&input_hotplug_rem);
 	rq_hotplug_disable_set(RQ_HOTPLUG_DISABLE_INPUT, true);
 	for_each_present_cpu(cpu) {
-		if (!cpu_online(cpu))
-			cpu_up(cpu);
+		if (!cpu_online(cpu) && !cpu_up(cpu))
+			cpumask_set_cpu(cpu, &input_hotplug_cpus);
 	}
-	queue_delayed_work(cpu_boost_wq, &input_hotplug_rem,
-			   msecs_to_jiffies(input_boost_hotplug_ms));
+	queue_delayed_work_on(0, cpu_boost_wq, &input_hotplug_rem,
+			      msecs_to_jiffies(input_boost_hotplug_ms));
 }
 
 static void do_input_boost(struct work_struct *work)
