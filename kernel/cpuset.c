@@ -469,6 +469,11 @@ update_domain_attr(struct sched_domain_attr *dattr, struct cpuset *c)
 	return;
 }
 
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+/* The local walk queue is drained and each stack_list is unlinked on removal. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
 static void
 update_domain_attr_tree(struct sched_domain_attr *dattr, struct cpuset *c)
 {
@@ -495,6 +500,9 @@ update_domain_attr_tree(struct sched_domain_attr *dattr, struct cpuset *c)
 		}
 	}
 }
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+#pragma GCC diagnostic pop
+#endif
 
 /*
  * generate_sched_domains()
@@ -2027,6 +2035,11 @@ static void remove_tasks_in_empty_cpuset(struct cpuset *cs)
  * that has tasks along with an empty 'mems'.  But if we did see such
  * a cpuset, we'd handle it just like we do if its 'cpus' was empty.
  */
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+/* The traversal removes each stack_list before the local queue expires. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
 static void scan_for_empty_cpusets(struct cpuset *root)
 {
 	LIST_HEAD(queue);
@@ -2070,6 +2083,9 @@ static void scan_for_empty_cpusets(struct cpuset *root)
 		}
 	}
 }
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+#pragma GCC diagnostic pop
+#endif
 
 /*
  * The top_cpuset tracks what CPUs and Memory Nodes are online,
