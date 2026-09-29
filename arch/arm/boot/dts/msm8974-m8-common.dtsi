@@ -14,6 +14,18 @@
 /include/ "msm8974-leds.dtsi"
 
 &soc {
+	/*
+	 * HTC's msm8974 temp-cpu policy on the hottest Krait sensor: 1728, 1497.6,
+	 * 883.2 and 422.4 MHz ceilings from 80, 90, 95 and 110 C, each released
+	 * 15, 15, 15 and 10 C lower. The ladder replaces the qcom,limit-temp step.
+	 */
+	qcom,msm-thermal {
+		qcom,freq-ladder = <80 65 1728000>,
+				   <90 75 1497600>,
+				   <95 80 883200>,
+				   <110 100 422400>;
+	};
+
 	mhl_usb_detect {
 		mhl_usb_reset_gpio = <&msmgpio 78 0>;
 	};
