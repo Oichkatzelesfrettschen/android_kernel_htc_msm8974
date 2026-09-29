@@ -2686,6 +2686,17 @@ SYSCALL_DEFINE2(memfd_create,
 	info = SHMEM_I(file->f_path.dentry->d_inode);
 	file->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
 	file->f_flags |= O_RDWR | O_LARGEFILE;
+	/*
+	 * __fput() calls put_write_access() for every FMODE_WRITE file, and
+	 * alloc_file() takes no write access, so the memfd holds one here;
+	 * otherwise closing it after a reopen through /proc/self/fd drives
+	 * i_writecount negative and later O_RDWR opens fail with ETXTBSY.
+	 */
+	error = get_write_access(file->f_path.dentry->d_inode);
+	if (error) {
+		fput(file);
+		goto err_fd;
+	}
 	if (flags & MFD_ALLOW_SEALING)
 		info->seals &= ~F_SEAL_SEAL;
 
