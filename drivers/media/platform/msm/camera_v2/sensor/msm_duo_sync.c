@@ -13,9 +13,9 @@
  * 4 lines, and with its analog gain at maximum the daemon asks for about
  * 1137 lines, more than a frame at the main camera's 30.05 fps holds; while
  * engaged, exposure is therefore clamped to the frame-length floor less 4
- * lines in both paths. The loop engages only while both VFEs deliver frame
- * starts; when the main camera stops, the daemon's last frame length and
- * exposure are restored.
+ * lines in both paths. The loop is on by default and engages only while
+ * both VFEs deliver frame starts; when the main camera stops, the daemon's
+ * last frame length and exposure are restored.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,7 @@
 #include <linux/kobject.h>
 #include <linux/math64.h>
 #include <linux/spinlock.h>
+#include <linux/string.h>
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
 #include <media/msm_cam_sensor.h>
@@ -43,6 +44,9 @@ extern int g_subcam_vfe_intf;
 /* OV2722: exposure must end 4 lines before the frame does. */
 #define DUO_EXP_MARGIN 4
 #define DUO_FL_MAX 0x7fff
+/* Engaged frames before the phase histogram counts: acquisition. */
+#define DUO_SETTLE_FRAMES 60
+#define DUO_HIST 5
 
 struct duo_sync {
 	spinlock_t lock;
@@ -71,6 +75,10 @@ struct duo_sync {
 	u32 exp_lines;
 	s32 phase_ns;
 	u32 lock_frames;
+	u32 engaged_frames;
+	/* |phase| after settling: <0.25, <0.5, <1, <2 and >=2 ms. */
+	u32 hist[DUO_HIST];
+	u32 max_abs_ns;
 	bool restore;
 
 	/* Telemetry. */
@@ -86,9 +94,14 @@ struct duo_sync {
 	u16 dump_data[DUO_DUMP_MAX];
 };
 
+/*
+ * The 1928x1088 mode delivers every frame down to a 1105-line frame, halves
+ * its rate at 1102 and stops at 1100; fl_min keeps 3 lines above that edge.
+ */
 static struct duo_sync ds = {
 	.lock = __SPIN_LOCK_UNLOCKED(ds.lock),
-	.fl_min = 1100,
+	.enable = true,
+	.fl_min = 1108,
 	.trim_max = 24,
 	.kp_div = 8,
 	.ki_div = 64,
@@ -110,6 +123,7 @@ static void duo_reset_loop(void)
 	ds.integ_q8 = 0;
 	ds.frac_q8 = 0;
 	ds.lock_frames = 0;
+	ds.engaged_frames = 0;
 	if (ds.fl_cmd) {
 		ds.fl_cmd = 0;
 		ds.restore = ds.fl_daemon != 0;
@@ -142,6 +156,14 @@ static void duo_run_loop(s64 now, int svfe, int mvfe)
 		ds.lock_frames++;
 	else
 		ds.lock_frames = 0;
+	if (++ds.engaged_frames > DUO_SETTLE_FRAMES) {
+		u32 a = (u32)(e < 0 ? -e : e);
+		int b = a < 250000 ? 0 : a < 500000 ? 1 : a < 1000000 ? 2 :
+			a < 2000000 ? 3 : 4;
+
+		ds.hist[b]++;
+		ds.max_abs_ns = max(ds.max_abs_ns, a);
+	}
 
 	/* A late subcamera frame start shortens the next subcamera frame. */
 	corr_q8 = -(s32)div_s64(duo_lines_q8(e), ds.kp_div);
@@ -393,6 +415,7 @@ static ssize_t duo_status_show(struct kobject *kobj,
 		"period0_ns=%u period1_ns=%u line_ps=%u offset_ns=%d\n"
 		"phase_ns=%d lock_frames=%u fl_cmd=%u fl_written=%u fl_daemon=%u exp_lines=%u exp_limit=%u\n"
 		"integ_q8=%d fl_min=%u trim_max=%u kp_div=%u ki_div=%u\n"
+		"hist_lt250us=%u hist_lt500us=%u hist_lt1ms=%u hist_lt2ms=%u hist_ge2ms=%u max_abs_ns=%u\n"
 		"sub_sofs=%u daemon_fl_tables=%u seq_writes=%u servo_writes=%u servo_skips=%u write_errors=%u\n"
 		"dump_type=%u",
 		s.enable, s.active, s.streaming, g_subcam_vfe_intf,
@@ -401,7 +424,8 @@ static ssize_t duo_status_show(struct kobject *kobj,
 		s.fl_written, s.fl_daemon, s.exp_lines,
 		s.fl_cmd ? (s.fl_override ? s.fl_override : s.fl_min) - DUO_EXP_MARGIN : 0,
 		s.integ_q8, s.fl_min,
-		s.trim_max, s.kp_div, s.ki_div, s.sub_sofs,
+		s.trim_max, s.kp_div, s.ki_div, s.hist[0], s.hist[1],
+		s.hist[2], s.hist[3], s.hist[4], s.max_abs_ns, s.sub_sofs,
 		s.daemon_fl_tables, s.seq_writes, s.servo_writes,
 		s.servo_skips, s.write_errors, s.dump_type);
 	for (i = 0; i < s.dump_n; i++)
@@ -431,6 +455,8 @@ static ssize_t duo_##name##_store(struct kobject *kobj,			\
 	spin_lock_irqsave(&ds.lock, flags);				\
 	ds.field = (type)v;						\
 	duo_reset_loop();						\
+	memset(ds.hist, 0, sizeof(ds.hist));				\
+	ds.max_abs_ns = 0;						\
 	spin_unlock_irqrestore(&ds.lock, flags);			\
 	schedule_work(&duo_sync_work);					\
 	return count;							\
