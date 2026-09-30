@@ -14,8 +14,12 @@
 struct kobject;
 struct msm_camera_i2c_reg_setting;
 
-/* Writes a frame length in lines to the subcamera; returns 0 on success. */
-typedef int (*duo_sync_write_fl_t)(u16 fl);
+/*
+ * Writes a frame length in lines and, when exp is nonzero, the exposure
+ * register value (lines x 16) to the subcamera in one group hold; returns 0
+ * on success and -EBUSY when the sensor mutex is held.
+ */
+typedef int (*duo_sync_write_fl_t)(u16 fl, u32 exp);
 
 #ifdef CONFIG_OV2722
 void duo_sync_sof(int vfe_id, const struct timeval *ts);

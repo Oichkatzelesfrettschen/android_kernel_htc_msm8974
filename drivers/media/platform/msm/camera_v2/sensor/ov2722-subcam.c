@@ -18,7 +18,7 @@
 DEFINE_MSM_MUTEX(ov2722_mut);
 
 static struct msm_sensor_ctrl_t ov2722_s_ctrl;
-static int ov2722_duo_write_fl(u16 fl);
+static int ov2722_duo_write_fl(u16 fl, u32 exp);
 
 // HTC: for subcam no ack issue
 extern int g_subcam_SOF;
@@ -742,13 +742,23 @@ int32_t ov2722_sub_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 	return rc;
 }
 
-/* Frame length writer for msm_duo_sync; never waits on the sensor mutex. */
-static int ov2722_duo_write_fl(u16 fl)
+/*
+ * Frame length and exposure writer for msm_duo_sync, bracketed in group
+ * hold 0 as the daemon's exposure tables are; never waits on the sensor
+ * mutex.
+ */
+static int ov2722_duo_write_fl(u16 fl, u32 exp)
 {
 	struct msm_sensor_ctrl_t *s_ctrl = &ov2722_s_ctrl;
 	struct msm_camera_i2c_reg_array regs[] = {
+		{0x3208, 0x00, 0},
 		{0x380e, fl >> 8, 0},
 		{0x380f, fl & 0xff, 0},
+		{0x3500, (exp >> 16) & 0x0f, 0},
+		{0x3501, (exp >> 8) & 0xff, 0},
+		{0x3502, exp & 0xff, 0},
+		{0x3208, 0x10, 0},
+		{0x3208, 0xa0, 0},
 	};
 	struct msm_camera_i2c_reg_setting setting = {
 		.reg_setting = regs,
@@ -759,6 +769,12 @@ static int ov2722_duo_write_fl(u16 fl)
 	};
 	int rc;
 
+	if (!exp) {
+		/* No exposure yet: drop its three entries, keep the hold. */
+		regs[3] = regs[6];
+		regs[4] = regs[7];
+		setting.size = 5;
+	}
 	if (!mutex_trylock(s_ctrl->msm_sensor_mutex))
 		return -EBUSY;
 	if (s_ctrl->sensor_state != MSM_SENSOR_POWER_UP)

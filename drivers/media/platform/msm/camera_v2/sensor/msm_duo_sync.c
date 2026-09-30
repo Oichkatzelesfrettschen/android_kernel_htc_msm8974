@@ -7,10 +7,15 @@
  * sets the subcamera frame length (OV2722 0x380e/0x380f) to the main
  * camera's period in subcamera lines plus a proportional-integral correction
  * of the phase error. The frame length reaches the sensor two ways: the
- * daemon's own exposure tables carry it every update and are rewritten in
- * flight, and a work item writes it whenever the loop changes it between
- * tables. The loop engages only while both VFEs deliver frame starts; when
- * the main camera stops, the daemon's last frame length is restored.
+ * daemon's own exposure tables carry it and are rewritten in flight, and a
+ * work item writes it whenever the loop changes it between tables. The
+ * sensor stops delivering frames when exposure passes the frame length less
+ * 4 lines, and with its analog gain at maximum the daemon asks for about
+ * 1137 lines, more than a frame at the main camera's 30.05 fps holds; while
+ * engaged, exposure is therefore clamped to the frame-length floor less 4
+ * lines in both paths. The loop engages only while both VFEs deliver frame
+ * starts; when the main camera stops, the daemon's last frame length and
+ * exposure are restored.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -62,6 +67,7 @@ struct duo_sync {
 	u32 fl_cmd;
 	u32 fl_written;
 	u32 fl_daemon;
+	u32 exp_raw;
 	u32 exp_lines;
 	s32 phase_ns;
 	u32 lock_frames;
@@ -123,7 +129,6 @@ static void duo_run_loop(s64 now, int svfe, int mvfe)
 	s64 target_q8;
 	s32 corr_q8;
 	u32 fl;
-	u32 floor;
 
 	/* Wrap the sub-to-main frame start distance into (-T/2, T/2]. */
 	e = now - ds.sof_ns[mvfe] - ds.offset_ns;
@@ -153,8 +158,15 @@ static void duo_run_loop(s64 now, int svfe, int mvfe)
 	fl = (u32)(target_q8 >> 8);
 	ds.frac_q8 = (u32)(target_q8 & 0xff);
 
-	floor = max(ds.fl_min, ds.exp_lines + DUO_EXP_MARGIN);
-	ds.fl_cmd = clamp_t(u32, fl, floor, DUO_FL_MAX);
+	ds.fl_cmd = clamp_t(u32, fl, ds.fl_min, DUO_FL_MAX);
+}
+
+/* Exposure register value (lines x 16) the sensor may carry while engaged. */
+static u32 duo_exp_limit(void)
+{
+	u32 floor = ds.fl_override ? ds.fl_override : ds.fl_min;
+
+	return (floor - DUO_EXP_MARGIN) << 4;
 }
 
 void duo_sync_sof(int vfe_id, const struct timeval *ts)
@@ -225,14 +237,17 @@ static void duo_sync_work_fn(struct work_struct *work)
 	bool restore;
 	int rc;
 
+	u32 exp;
+
 	spin_lock_irqsave(&ds.lock, flags);
 	restore = ds.restore && !ds.fl_cmd;
 	fl = restore ? ds.fl_daemon : ds.fl_cmd;
+	exp = restore ? ds.exp_raw : min(ds.exp_raw, duo_exp_limit());
 	spin_unlock_irqrestore(&ds.lock, flags);
 
 	if (!fl || !duo_write_fl)
 		return;
-	rc = duo_write_fl((u16)fl);
+	rc = duo_write_fl((u16)fl, exp);
 
 	spin_lock_irqsave(&ds.lock, flags);
 	if (rc == -EBUSY) {
@@ -255,6 +270,7 @@ void duo_sync_filter_table(struct msm_camera_i2c_reg_setting *setting)
 	bool byte = setting->data_type == MSM_CAMERA_I2C_BYTE_DATA;
 	bool word = setting->data_type == MSM_CAMERA_I2C_WORD_DATA;
 	int fl_hi = -1, fl_lo = -1, fl_word = -1;
+	int exp_idx[3] = {-1, -1, -1};
 	u32 exp = 0;
 	bool has_exp = false;
 	u32 fl;
@@ -283,12 +299,22 @@ void duo_sync_filter_table(struct msm_camera_i2c_reg_setting *setting)
 		} else if (byte && a >= 0x3500 && a <= 0x3502) {
 			/* Exposure {0x3500[3:0], 0x3501, 0x3502} in 1/16 lines. */
 			exp |= (u32)(v & 0xff) << (8 * (0x3502 - a));
+			exp_idx[a - 0x3500] = i;
 			has_exp = true;
 		}
 	}
 
-	if (has_exp)
-		ds.exp_lines = (exp & 0xfffff) >> 4;
+	if (has_exp) {
+		ds.exp_raw = exp & 0xfffff;
+		ds.exp_lines = ds.exp_raw >> 4;
+		if (ds.fl_cmd && ds.exp_raw > duo_exp_limit()) {
+			exp = duo_exp_limit();
+			for (i = 0; i < 3; i++)
+				if (exp_idx[i] >= 0)
+					r[exp_idx[i]].reg_data =
+						(exp >> (8 * (2 - i))) & 0xff;
+		}
+	}
 
 	if (fl_hi >= 0 || fl_word >= 0) {
 		ds.daemon_fl_tables++;
@@ -305,7 +331,7 @@ void duo_sync_filter_table(struct msm_camera_i2c_reg_setting *setting)
 				(r[fl_lo].reg_data & 0xff);
 
 		if (ds.fl_cmd) {
-			fl = max(ds.fl_cmd, ds.exp_lines + DUO_EXP_MARGIN);
+			fl = ds.fl_cmd;
 			if (fl_word >= 0) {
 				r[fl_word].reg_data = fl;
 			} else if (fl_lo >= 0) {
@@ -365,14 +391,16 @@ static ssize_t duo_status_show(struct kobject *kobj,
 	n = scnprintf(buf, PAGE_SIZE,
 		"enable=%d active=%d streaming=%d sub_vfe=%d override=%u\n"
 		"period0_ns=%u period1_ns=%u line_ps=%u offset_ns=%d\n"
-		"phase_ns=%d lock_frames=%u fl_cmd=%u fl_written=%u fl_daemon=%u exp_lines=%u\n"
+		"phase_ns=%d lock_frames=%u fl_cmd=%u fl_written=%u fl_daemon=%u exp_lines=%u exp_limit=%u\n"
 		"integ_q8=%d fl_min=%u trim_max=%u kp_div=%u ki_div=%u\n"
 		"sub_sofs=%u daemon_fl_tables=%u seq_writes=%u servo_writes=%u servo_skips=%u write_errors=%u\n"
 		"dump_type=%u",
 		s.enable, s.active, s.streaming, g_subcam_vfe_intf,
 		s.fl_override, s.period_ns[0], s.period_ns[1], s.line_ps,
 		s.offset_ns, s.phase_ns, s.lock_frames, s.fl_cmd,
-		s.fl_written, s.fl_daemon, s.exp_lines, s.integ_q8, s.fl_min,
+		s.fl_written, s.fl_daemon, s.exp_lines,
+		s.fl_cmd ? (s.fl_override ? s.fl_override : s.fl_min) - DUO_EXP_MARGIN : 0,
+		s.integ_q8, s.fl_min,
 		s.trim_max, s.kp_div, s.ki_div, s.sub_sofs,
 		s.daemon_fl_tables, s.seq_writes, s.servo_writes,
 		s.servo_skips, s.write_errors, s.dump_type);
