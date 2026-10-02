@@ -58,12 +58,12 @@ SECTIONS
 	 * matching the same input section name.  There is no documented
 	 * order of matching.
 	 *
-	 * unwind exit sections must be discarded before the rest of the
-	 * unwind sections get included.
+	 * Discard unwind tables for discarded exit text before collecting
+	 * the remaining unwind sections. Retained exit text keeps its tables.
 	 */
 	/DISCARD/ : {
-		*(.ARM.exidx.exit.text)
-		*(.ARM.extab.exit.text)
+		ARM_EXIT_DISCARD(*(.ARM.exidx.exit.text))
+		ARM_EXIT_DISCARD(*(.ARM.extab.exit.text))
 		ARM_CPU_DISCARD(*(.ARM.exidx.cpuexit.text))
 		ARM_CPU_DISCARD(*(.ARM.extab.cpuexit.text))
 		ARM_EXIT_DISCARD(EXIT_TEXT)
