@@ -378,7 +378,8 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
+		   -fno-delete-null-pointer-checks \
+		   $(call cc-option,-std=gnu89)
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
@@ -609,7 +610,13 @@ endif
 KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
 ifdef CONFIG_DEBUG_INFO
-KBUILD_CFLAGS	+= -g
+# clang 5+ defaults -g to DWARF5, whose .file directives are 0-indexed;
+# this tree's binutils (GNU as 2.2x, GCC 4.9-era) reads DWARF <= 4, where
+# file numbering starts at 1, and rejects "file 0" as "file number less
+# than one". -gdwarf-4 is accepted by both compilers (GCC has taken
+# -gdwarf-<N> since long before 4.9) and keeps the emitted line tables
+# inside what this tree's assembler parses.
+KBUILD_CFLAGS	+= -g $(call cc-option, -gdwarf-4)
 KBUILD_AFLAGS	+= -gdwarf-2
 endif
 
