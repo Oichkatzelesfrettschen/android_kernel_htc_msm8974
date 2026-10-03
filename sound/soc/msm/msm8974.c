@@ -1090,7 +1090,9 @@ static int msm_btsco_rate_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
 	pr_debug("%s: msm_btsco_rate  = %d", __func__, msm_btsco_rate);
-	ucontrol->value.integer.value[0] = msm_btsco_rate;
+	/* An enumerated control reads back as an index into btsco_rate_text. */
+	ucontrol->value.integer.value[0] =
+		msm_btsco_rate == BTSCO_RATE_16KHZ ? 1 : 0;
 	return 0;
 }
 
