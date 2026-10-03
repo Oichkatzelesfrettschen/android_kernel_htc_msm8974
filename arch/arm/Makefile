@@ -51,6 +51,20 @@ AS		+= -EL
 LD		+= -EL
 endif
 
+# ld -r of a directory whose only input is an empty built-in archive has no
+# object to infer the target from: GNU gold falls back to its configured
+# target, ld.lld needs the emulation named. gold rejects armelf_linux_eabi,
+# so the flag goes only to ld.lld, and through LDFLAGS because an LD given
+# on the make command line (as vendor/lineage kernel.mk passes it) discards
+# every LD += above.
+ifneq ($(shell $(LD) --version 2>/dev/null | grep -c LLD),0)
+ifeq ($(CONFIG_CPU_BIG_ENDIAN),y)
+LDFLAGS		+= -EB -m armelfb_linux_eabi
+else
+LDFLAGS		+= -EL -m armelf_linux_eabi
+endif
+endif
+
 comma = ,
 
 #
