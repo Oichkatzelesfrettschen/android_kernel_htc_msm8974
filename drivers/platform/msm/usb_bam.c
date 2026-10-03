@@ -2706,7 +2706,7 @@ bool msm_bam_lpm_ok(void)
 }
 EXPORT_SYMBOL(msm_bam_lpm_ok);
 
-void msm_bam_notify_lpm_resume()
+void msm_bam_notify_lpm_resume(void)
 {
 	/*
 	 * If core was resumed from lpm, just clear the
