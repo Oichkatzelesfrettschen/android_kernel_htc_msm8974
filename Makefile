@@ -609,6 +609,19 @@ endif
 
 KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
+# Clang warnings mainline Linux leaves off for kernel builds (v5.10 Makefile
+# and scripts/Makefile.extrawarn): packed-member addresses, the kernel's %p
+# format extensions, GNU C extensions, designated-initializer overrides,
+# unused const tables, and out-of-range constant compares in generic macros.
+# cc-disable-warning adds each only where the compiler knows it, so a GCC
+# 4.9 build keeps its flags.
+KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, format-invalid-specifier)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, gnu)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, initializer-overrides)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, unused-const-variable)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, tautological-constant-out-of-range-compare)
+
 ifdef CONFIG_DEBUG_INFO
 # clang 5+ defaults -g to DWARF5, whose .file directives are 0-indexed;
 # this tree's binutils (GNU as 2.2x, GCC 4.9-era) reads DWARF <= 4, where
