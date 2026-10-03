@@ -825,6 +825,10 @@ static void mic_detect_work_func(struct work_struct *work)
 		new_state |= BIT_HEADSET;
 		pr_debug("HEADSET_METRICO\n");
 		break;
+	case HEADSET_UNKNOWN_MIC:
+		new_state |= BIT_HEADSET_NO_MIC;
+		pr_debug("HEADSET_UNKNOWN_MIC\n");
+		break;
 	case HEADSET_TV_OUT:
 		new_state |= BIT_TV_OUT;
 		pr_debug("HEADSET_TV_OUT\n");
