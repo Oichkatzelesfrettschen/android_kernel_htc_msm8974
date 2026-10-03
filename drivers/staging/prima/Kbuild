@@ -666,6 +666,11 @@ endif
 
 # Fix build for GCC 4.7
 EXTRA_CFLAGS += -Wno-unused-function -Wno-unused-variable
+# Prima passes status codes between VOS_STATUS, eHalStatus, WDI_Status and
+# tSirRetStatus, whose SUCCESS enumerators are all 0, so success and failure
+# survive each conversion. Qualcomm's own prima Kbuild disables the warning
+# (CAF tag LA.UM.8.6.r1-04000-89xx.0).
+EXTRA_CFLAGS += $(call cc-disable-warning, enum-conversion)
 
 KBUILD_CPPFLAGS += $(CDEFINES)
 
