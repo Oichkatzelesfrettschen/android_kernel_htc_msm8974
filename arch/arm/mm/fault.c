@@ -133,6 +133,21 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 { }
 #endif					/* CONFIG_MMU */
 
+static void die_kernel_fault(const char *msg, struct mm_struct *mm,
+			     unsigned long addr, unsigned int fsr,
+			     struct pt_regs *regs)
+{
+	bust_spinlocks(1);
+	printk(KERN_ALERT
+		"Unable to handle kernel %s at virtual address %08lx\n",
+		msg, addr);
+
+	show_pte(mm, addr);
+	die("Oops", regs, fsr);
+	bust_spinlocks(0);
+	do_exit(SIGKILL);
+}
+
 /*
  * Oops.  The kernel tried to access some page that wasn't present.
  */
@@ -140,6 +155,7 @@ static void
 __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 		  struct pt_regs *regs)
 {
+	const char *msg;
 	/*
 	 * Are we prepared to handle this kernel fault?
 	 */
@@ -149,16 +165,12 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 	/*
 	 * No handler, we'll have to terminate things with extreme prejudice.
 	 */
-	bust_spinlocks(1);
-	printk(KERN_ALERT
-		"Unable to handle kernel %s at virtual address %08lx\n",
-		(addr < PAGE_SIZE) ? "NULL pointer dereference" :
-		"paging request", addr);
+	if (addr < PAGE_SIZE)
+		msg = "NULL pointer dereference";
+	else
+		msg = "paging request";
 
-	show_pte(mm, addr);
-	die("Oops", regs, fsr);
-	bust_spinlocks(0);
-	do_exit(SIGKILL);
+	die_kernel_fault(msg, mm, addr, fsr, regs);
 }
 
 /*
@@ -212,6 +224,19 @@ void do_bad_area(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 #ifdef CONFIG_MMU
 #define VM_FAULT_BADMAP		0x010000
 #define VM_FAULT_BADACCESS	0x020000
+
+static inline bool is_permission_fault(unsigned int fsr)
+{
+	int fs = fsr_fs(fsr);
+#ifdef CONFIG_ARM_LPAE
+	if ((fs & FS_PERM_NOLL_MASK) == FS_PERM_NOLL)
+		return true;
+#else
+	if (fs == FS_L1_PERM || fs == FS_L2_PERM)
+		return true;
+#endif
+	return false;
+}
 
 /*
  * Check that the permissions on the VMA allow for the fault which occurred.
@@ -291,6 +316,9 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	 */
 	if (in_atomic() || !mm)
 		goto no_context;
+
+	if ((fsr & FSR_LNX_PF) && is_permission_fault(fsr) && !user_mode(regs))
+		die_kernel_fault("execution of memory", mm, addr, fsr, regs);
 
 	/*
 	 * As per x86, we may deadlock here.  However, since the kernel only
