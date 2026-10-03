@@ -761,6 +761,13 @@ static void mic_detect_work_func(struct work_struct *work)
 			pr_debug("MIC polling timeout (UNKNOWN/Floating MIC status)\n");
 #ifdef CONFIG_HTC_HEADSET_INT_REDETECT
 			hi->plugout_redetect = 0;
+			/* HPIN reports the plug inserted and stable while the
+			 * mic contact still floats: the plug is seated with its
+			 * mic off, so its headphones are reported. A key event
+			 * on HEADSET_UNKNOWN_MIC re-polls the mic. */
+			if (mic == HEADSET_UNPLUG && hi->is_ext_insert &&
+			    hs_hpin_stable())
+				mic = HEADSET_UNKNOWN_MIC;
 #else
 			mutex_unlock(&hi->mutex_lock);
 #ifdef CONFIG_HTC_HEADSET_DET_DEBOUNCE
@@ -817,6 +824,10 @@ static void mic_detect_work_func(struct work_struct *work)
 	case HEADSET_METRICO:
 		new_state |= BIT_HEADSET;
 		pr_debug("HEADSET_METRICO\n");
+		break;
+	case HEADSET_UNKNOWN_MIC:
+		new_state |= BIT_HEADSET_NO_MIC;
+		pr_debug("HEADSET_UNKNOWN_MIC\n");
 		break;
 	case HEADSET_TV_OUT:
 		new_state |= BIT_TV_OUT;
@@ -1148,6 +1159,11 @@ static void insert_detect_work_func(struct work_struct *work)
 #ifdef CONFIG_HTC_HEADSET_INT_REDETECT
 			if (hs_mgr_notifier.key_int_enable)
 				hs_mgr_notifier.key_int_enable(1);
+			/* A floating mic contact is either a plug still seating
+			 * or a seated plug whose mic is switched off. Polling
+			 * classifies the plug once it seats, and a poll that
+			 * ends still floating reports headphones. */
+			update_mic_status(HS_DEF_MIC_DETECT_COUNT);
 #else
 			
 #ifdef CONFIG_HTC_HEADSET_DET_DEBOUNCE
