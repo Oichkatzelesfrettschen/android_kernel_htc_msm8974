@@ -873,7 +873,7 @@ void exit_irq_thread(void)
 
 	printk(KERN_ERR
 	       "exiting task \"%s\" (%d) is an active IRQ thread (irq %d)\n",
-	       tsk->comm ? tsk->comm : "", tsk->pid, action->irq);
+	       tsk->comm, tsk->pid, action->irq);
 
 	desc = irq_to_desc(action->irq);
 
