@@ -3794,7 +3794,6 @@ static struct i2c_driver bma250_driver = {
 	.remove   = bma250_remove,
 	.id_table = bma250_id,
 };
-module_i2c_driver(bma250_driver);
 
 #if 0
 static int __init BMA250_init(void)
