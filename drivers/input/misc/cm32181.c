@@ -1144,6 +1144,7 @@ static struct i2c_driver cm32181_driver = {
 	.probe = cm32181_probe,
 	.id_table = cm32181_i2c_id,
 };
+module_i2c_driver(cm32181_driver);
 #ifndef CONFIG_OF
 static int __init cm32181_init(void)
 {

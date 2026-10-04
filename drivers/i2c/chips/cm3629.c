@@ -3332,6 +3332,7 @@ static struct i2c_driver cm3629_driver = {
         .id_table = cm3629_i2c_id,
 
 };
+module_i2c_driver(cm3629_driver);
 #ifndef CONFIG_OF
 static int __init cm3629_init(void)
 {

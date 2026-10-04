@@ -1786,6 +1786,7 @@ static struct i2c_driver akm_compass_driver = {
 
 #ifdef CONFIG_OF
 
+module_i2c_driver(akm_compass_driver);
 
 #else 
 
