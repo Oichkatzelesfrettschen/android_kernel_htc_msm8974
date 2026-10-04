@@ -793,17 +793,6 @@ static int msm_close(struct file *filep)
 	return rc;
 }
 
-static inline void msm_list_switch(struct list_head *l1,
-	struct list_head *l2)
-{
-	l1->next = l2->next;
-	l2->prev = l1->prev;
-	l1->prev->next = l2;
-	l2->next->prev = l1;
-	l1->prev = l2;
-	l2->next = l1;
-}
-
 static int msm_open(struct file *filep)
 {
 	int rc;
