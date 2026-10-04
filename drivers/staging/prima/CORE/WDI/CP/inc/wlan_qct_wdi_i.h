@@ -902,7 +902,14 @@ typedef enum
   WDI_HAL_DEL_BA_IND                 = WDI_HAL_IND_MIN + 27,
   WDI_HAL_NAN_EVENT                  = WDI_HAL_IND_MIN + 28,
   WDI_HAL_LOST_LINK_PARAMS_IND       = WDI_HAL_IND_MIN + 29,
-  WDI_MAX_RESP
+  WDI_MAX_RESP,
+
+  /*
+   * HAL_2_WDI_RSP_TYPE() result for an unknown HAL message. It lies above
+   * WDI_MAX_RESP, so it never matches the idle wdiExpectedResponse value
+   * WDI_MAX_RESP and fails the response-table bounds check.
+   */
+  WDI_UNKNOWN_RESP                   = 0x7FFFFFFF
 }WDI_ResponseEnumType; 
 
 typedef struct 

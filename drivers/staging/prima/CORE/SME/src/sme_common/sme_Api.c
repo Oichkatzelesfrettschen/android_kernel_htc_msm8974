@@ -587,7 +587,7 @@ static void smeAbortCommand( tpAniSirGlobal pMac, tSmeCmd *pCommand, tANI_BOOLEA
                     if( callback )
                     {
                         callback(pMac, pCommand->u.remainChlCmd.callbackCtx,
-                                            eCSR_SCAN_ABORT );
+                                            eHAL_STATUS_FAILURE );
                     }
                 }
                 smeReleaseCommand( pMac, pCommand );

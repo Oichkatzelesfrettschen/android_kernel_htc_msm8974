@@ -259,7 +259,6 @@ struct qpnp_bms_chip {
 	int				iavg_samples_ma[IAVG_SAMPLES];
 	int				iavg_index;
 	int				iavg_num_samples;
-	struct timespec			t_soc_queried;
 	int				last_soc;
 	int				last_soc_est;
 	int				last_soc_unbound;
@@ -2160,7 +2159,6 @@ static int report_cc_based_soc(struct qpnp_bms_chip *chip)
 	int soc, soc_change;
 	int time_since_last_change_sec, charge_time_sec = 0;
 	unsigned long last_change_sec;
-	struct timespec now;
 	struct qpnp_vadc_result result;
 	int batt_temp;
 	int rc;
@@ -2270,7 +2268,6 @@ pr_debug("last_soc = %d, calculated_soc = %d, soc = %d, time since last change =
 	chip->last_soc = bound_soc(soc);
 	backup_soc_and_iavg(chip, batt_temp, chip->last_soc);
 	pr_debug("Reported SOC = %d\n", chip->last_soc);
-	chip->t_soc_queried = now;
 	mutex_unlock(&chip->last_soc_mutex);
 
 	return soc;

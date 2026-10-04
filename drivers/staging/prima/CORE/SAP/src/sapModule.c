@@ -995,24 +995,18 @@ WLANSAP_ClearACL( v_PVOID_t  pvosGCtx)
         return VOS_STATUS_E_RESOURCES;
     }
 
-    if (pSapCtx->denyMacList != NULL)
+    for (i = 0; i < (pSapCtx->nDenyMac-1); i++)
     {
-        for (i = 0; i < (pSapCtx->nDenyMac-1); i++)
-        {
-            vos_mem_zero((pSapCtx->denyMacList+i)->bytes, sizeof(v_MACADDR_t));
+        vos_mem_zero((pSapCtx->denyMacList+i)->bytes, sizeof(v_MACADDR_t));
 
-        }
     }
     sapPrintACL(pSapCtx->denyMacList, pSapCtx->nDenyMac);
     pSapCtx->nDenyMac  = 0;
 
-    if (pSapCtx->acceptMacList!=NULL)
+    for (i = 0; i < (pSapCtx->nAcceptMac-1); i++)
     {
-        for (i = 0; i < (pSapCtx->nAcceptMac-1); i++)
-        {
-            vos_mem_zero((pSapCtx->acceptMacList+i)->bytes, sizeof(v_MACADDR_t));
+        vos_mem_zero((pSapCtx->acceptMacList+i)->bytes, sizeof(v_MACADDR_t));
 
-        }
     }
     sapPrintACL(pSapCtx->acceptMacList, pSapCtx->nAcceptMac);
     pSapCtx->nAcceptMac = 0;

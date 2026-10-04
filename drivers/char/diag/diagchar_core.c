@@ -1513,8 +1513,6 @@ drop:
 		ret -= 4;
 		for (i = 0; i < NUM_SMD_DATA_CHANNELS; i++) {
 			if (driver->smd_data[i].ch)
-				queue_work(driver->diag_wq,
-				&(driver->smd_data[i].diag_read_smd_work));
 				queue_work(driver->smd_data[i].wq,
 				&(driver->smd_data[i].diag_read_smd_work));
 		}
@@ -1661,8 +1659,6 @@ dropd:
 		ret -= 4;
 		for (i = 0; i < NUM_SMD_DATA_CHANNELS; i++) {
 			if (driver->smd_data[i].ch)
-				queue_work(driver->diag_wq,
-				&(driver->smd_data[i].diag_read_smd_work));
 				queue_work(driver->smd_data[i].wq,
 				&(driver->smd_data[i].diag_read_smd_work));
 		}
@@ -2543,7 +2539,6 @@ static int diagchar_setup_cdev(dev_t devno)
 {
 
 	int err;
-	struct device	*diagdev;
 
 	cdev_init(driver->cdev, &diagcharfops);
 
@@ -2596,7 +2591,7 @@ static int diagchar_setup_cdev(dev_t devno)
 #endif
 #endif
 
-	diagdev->power.wakeup = wakeup_source_register("DIAG_WS");
+	driver->diag_dev->power.wakeup = wakeup_source_register("DIAG_WS");
 
 	return 0;
 

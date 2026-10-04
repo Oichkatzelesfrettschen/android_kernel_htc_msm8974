@@ -1299,13 +1299,70 @@ int YushanII_set_hdr_merge_debug(void __user *argp){
 	return 0;
 }
 
+/*
+ * The ioctl enums in linux_yushanii.h and the ILP0100 enums in
+ * ilp0100_ST_definitions.h are separate types; these helpers translate
+ * each userspace value and reject values the ILP0100 does not define.
+ */
+static int yushanii_hdr_merge_method(HdrMergeMethod method,
+	Ilp0100_enumHdrMergeMethod *out)
+{
+	switch (method) {
+	case KNEE_POINTS:
+		*out = USE_KNEE_POINTS;
+		return 0;
+	case HDR_AVERAGE:
+		*out = USE_AVERAGE;
+		return 0;
+	case AVERAGE_AND_KNEE_POINTS:
+		*out = USE_AVERAGE_AND_KNEE_POINTS;
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int yushanii_hdr_merge_code(HdrMergeImageCodes code,
+	Ilp0100_enumHdrMergeImageCodes *out)
+{
+	switch (code) {
+	case HDR_MAX_MACRO_PIXEL:
+		*out = MAX_MACRO_PIXEL;
+		return 0;
+	case HDR_LUMA:
+		*out = LUMA;
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int yushanii_hdr_merge_mode(HDRMergeMode mode,
+	Ilp0100_enumHdrMergeMode *out)
+{
+	switch (mode) {
+	case HDR_ON:
+		*out = ON;
+		return 0;
+	case HDR_OUTPUT_LONG_ONLY:
+		*out = OUTPUT_LONG_ONLY;
+		return 0;
+	case HDR_OUTPUT_SHORT_ONLY:
+		*out = OUTPUT_SHORT_ONLY;
+		return 0;
+	}
+	return -EINVAL;
+}
+
 int YushanII_set_hdr_merge(struct yushanii_hdr_merge hdr_merge){
 	Ilp0100_structHdrMergeParams merge_parm;
 
 	pr_info("[CAM] %s, set hdr merge core:%d, method:%d", __func__, hdr_merge.code, hdr_merge.method);
 
-	merge_parm.ImageCodes = hdr_merge.code;
-	merge_parm.Method = hdr_merge.method;
+	if (yushanii_hdr_merge_code(hdr_merge.code, &merge_parm.ImageCodes) ||
+	    yushanii_hdr_merge_method(hdr_merge.method, &merge_parm.Method)) {
+		pr_err("[CAM] %s: invalid hdr merge code %d or method %d\n",
+			__func__, hdr_merge.code, hdr_merge.method);
+		return -EINVAL;
+	}
 	Ilp0100_updateHdrMerge(merge_parm);
 	return 0;
 }
@@ -1323,7 +1380,12 @@ int YushanII_set_hdr_merge_mode(void __user *argp){
 
 	pr_info("[CAM] %s, set hdr merge mode:%d", __func__, usr_hdr_merge_mode.Mode);
 
-	merge_config.Mode= usr_hdr_merge_mode.Mode;
+	if (yushanii_hdr_merge_mode(usr_hdr_merge_mode.Mode,
+			&merge_config.Mode)) {
+		pr_err("[CAM] %s: invalid hdr merge mode %d\n", __func__,
+			usr_hdr_merge_mode.Mode);
+		return -EINVAL;
+	}
 	Ilp0100_configHdrMerge(merge_config);
 	return 0;
 }
