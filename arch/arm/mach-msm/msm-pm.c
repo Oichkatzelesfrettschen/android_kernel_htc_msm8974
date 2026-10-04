@@ -790,29 +790,6 @@ void arch_idle(void)
 	return;
 }
 
-static inline void msm_pm_ftrace_lpm_enter(unsigned int cpu,
-		uint32_t latency, uint32_t sleep_us,
-		uint32_t wake_up,
-		enum msm_pm_sleep_mode mode)
-{
-	switch (mode) {
-	case MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT:
-		trace_msm_pm_enter_wfi(cpu, latency, sleep_us, wake_up);
-		break;
-	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE:
-		trace_msm_pm_enter_spc(cpu, latency, sleep_us, wake_up);
-		break;
-	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
-		trace_msm_pm_enter_pc(cpu, latency, sleep_us, wake_up);
-		break;
-	case MSM_PM_SLEEP_MODE_RETENTION:
-		trace_msm_pm_enter_ret(cpu, latency, sleep_us, wake_up);
-		break;
-	default:
-		break;
-	}
-}
-
 static inline void msm_pm_ftrace_lpm_exit(unsigned int cpu,
 		enum msm_pm_sleep_mode mode,
 		bool success)
