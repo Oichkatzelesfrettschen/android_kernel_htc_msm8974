@@ -1056,10 +1056,6 @@ static ssize_t diag2arm9_write(struct file *fp, const char __user *buf,
 			DIAG_INFO("%s: driver->smd_data[MODEM_DATA].ch == NULL", __func__);
 			r = -EFAULT;
 			break;
-		} else if (ctxt->toARM9_buf == NULL) {
-			DIAG_INFO("%s: ctxt->toARM9_buf == NULL", __func__);
-			r = -EFAULT;
-			break;
 		}
 #endif
 
