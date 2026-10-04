@@ -885,8 +885,8 @@ ifdef CONFIG_LTO_CLANG
 # native code in vmlinux.o, and kallsyms and the final link reuse it. The
 # built-in.o thin archives are linked whole; lib.a archives keep lazy member
 # selection. The generated script lists every initcall section in link
-# order, and the link fails when one escapes it, because vmlinux.lds
-# collects only the merged level sections.
+# order, and the link fails and removes vmlinux.o when one escapes it,
+# because vmlinux.lds collects only the merged level sections.
 vmlinux-lto-inputs = $(vmlinux-init) --start-group \
 	$(foreach input,$(vmlinux-main),$(if $(filter %.a,$(input)),\
 	--no-whole-archive $(input) --whole-archive,$(input))) --end-group
@@ -903,7 +903,9 @@ quiet_cmd_vmlinux-modpost = LTO     $@
 	 $(LD) $(LDFLAGS) -r $(LDFLAGS_LTO) -T .tmp_initcalls.lds -o $@          \
 	 --whole-archive $(vmlinux-lto-inputs) --no-whole-archive               \
 	 $(filter-out $(vmlinux-init) $(vmlinux-main) $(vmlinux-lto-scripts) FORCE ,$^) && \
-	 ! $(OBJDUMP) -h $@ | grep -q 'initcall[0-9a-z]*\.init\.\.'
+	 $(OBJDUMP) -h $@ > .tmp_vmlinux.o.sections &&                           \
+	 ! grep -q 'initcall[0-9a-z]*\.init\.\.' .tmp_vmlinux.o.sections ||   \
+	 { rm -f $@; false; }
 endif
 
 # Rule to link vmlinux - also used during CONFIG_KALLSYMS
