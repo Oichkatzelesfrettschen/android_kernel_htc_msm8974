@@ -2233,6 +2233,10 @@ uint8_t i;
 								MHL_TX_EDID_INFO(mhl_edid_3d_data->dev_context,
 										"EDID -> Short Descriptor Colorimetry Block\n");
 								break;
+
+							default:
+								/* Other extended tags carry no data this parser stores. */
+								break;
 						}
 					}
 
