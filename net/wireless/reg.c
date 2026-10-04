@@ -1536,8 +1536,6 @@ static void reg_process_hint(struct regulatory_request *reg_request,
 	int r = 0;
 	struct wiphy *wiphy = NULL;
 
-	BUG_ON(!reg_request->alpha2);
-
 	if (wiphy_idx_valid(reg_request->wiphy_idx))
 		wiphy = wiphy_idx_to_wiphy(reg_request->wiphy_idx);
 
