@@ -791,7 +791,7 @@ static enum flash_area fwu_go_nogo(void)
 			__func__);
 		imageFirmwareID = img->firmware_id;
 	} else {
-		if (!fwu->image_name) {
+		if (!fwu->image_name[0]) {
 			dev_info(&i2c_client->dev,
 				"%s: Unknown image file name\n",
 				__func__);
