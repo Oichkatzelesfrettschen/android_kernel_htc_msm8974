@@ -609,6 +609,11 @@ endif
 
 KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
+# Clang 15 and later, and some distribution GCCs, default to PIE; the kernel
+# is linked at a fixed address and expects absolute code and data.
+KBUILD_CFLAGS	+= $(call cc-option, -fno-PIE)
+KBUILD_AFLAGS	+= $(call cc-option, -fno-PIE)
+
 # Clang warnings mainline Linux leaves off for kernel builds (v5.10 Makefile
 # and scripts/Makefile.extrawarn): packed-member addresses, the kernel's %p
 # format extensions, GNU C extensions, designated-initializer overrides,
