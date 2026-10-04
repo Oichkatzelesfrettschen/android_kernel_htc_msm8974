@@ -406,11 +406,6 @@ static inline u8 q_reg_get(u8 *reg, int shift, int mask)
 	return (*reg & mask) >> shift;
 }
 
-static inline void q_reg_set(u8 *reg, int shift, int mask, int value)
-{
-	*reg |= (value << shift) & mask;
-}
-
 static inline void q_reg_clr_set(u8 *reg, int shift, int mask, int value)
 {
 	*reg &= ~mask;
