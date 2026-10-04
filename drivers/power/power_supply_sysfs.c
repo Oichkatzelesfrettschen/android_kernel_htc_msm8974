@@ -242,6 +242,13 @@ void power_supply_init_attrs(struct device_type *dev_type)
 {
 	int i;
 
+	/*
+	 * power_supply_uevent() and the sysfs group index this table by
+	 * enum power_supply_property, so every property needs its entry.
+	 */
+	BUILD_BUG_ON(ARRAY_SIZE(power_supply_attrs) !=
+		     POWER_SUPPLY_PROP_SERIAL_NUMBER + 1);
+
 	dev_type->groups = power_supply_attr_groups;
 
 	for (i = 0; i < ARRAY_SIZE(power_supply_attrs); i++)
