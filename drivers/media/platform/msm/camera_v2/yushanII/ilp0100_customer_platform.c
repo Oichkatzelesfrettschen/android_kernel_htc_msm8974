@@ -270,7 +270,7 @@ ilp0100_error Ilp0100_readFileInBuffer(struct msm_sensor_ctrl_t *s_ctrl, uint8_t
  * \retval		ILP0100_ERROR_NONE : Success
  * \retval		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_interruptHandler()
+ilp0100_error Ilp0100_interruptHandler(void)
 {
 	ilp0100_error Ret= ILP0100_ERROR_NONE;
 	

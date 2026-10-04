@@ -94,6 +94,23 @@ static DEFINE_MUTEX(vdd_rstr_mutex);
 static DEFINE_MUTEX(psm_mutex);
 static DEFINE_MUTEX(ocr_mutex);
 static uint32_t min_freq_limit;
+
+/*
+ * qcom,freq-ladder: <trigger clear max_freq> steps ordered by rising trigger.
+ * The level rises past each step whose trigger the hottest qcom,cpu-sensors
+ * zone reaches and falls back below each step whose clear it drops under, so
+ * every step holds its own ceiling across its trigger-to-clear band.
+ */
+struct freq_ladder_step {
+	int32_t trigger_degC;
+	int32_t clear_degC;
+	uint32_t max_freq;
+};
+static struct freq_ladder_step *freq_ladder;
+static int freq_ladder_ct;
+static int freq_ladder_level;
+static uint32_t freq_ladder_max_freq = UINT_MAX;
+static int freq_ladder_zone[NR_CPUS];
 static uint32_t default_cpu_temp_limit;
 static bool default_temp_limit_enabled;
 static bool default_temp_limit_probed;
@@ -1288,10 +1305,91 @@ exit:
 	return ret;
 }
 
+static void __ref apply_freq_ladder(void)
+{
+	uint32_t cpu = 0;
+
+	/*
+	 * do_freq_mitigation() owns limited_max_freq once its kthread runs and
+	 * folds freq_ladder_max_freq in with the qcom,freq-mitigation-temp cap
+	 * and the userspace request; before that the ladder writes it here.
+	 */
+	if (freq_mitigation_task) {
+		complete(&freq_mitigation_complete);
+		return;
+	}
+
+	get_online_cpus();
+	for_each_possible_cpu(cpu) {
+		if (!(msm_thermal_info.bootup_freq_control_mask & BIT(cpu)))
+			continue;
+		cpus[cpu].limited_max_freq = min(freq_ladder_max_freq,
+				cpus[cpu].user_max_freq);
+		update_cpu_freq(cpu);
+	}
+	put_online_cpus();
+}
+
+static void __ref do_freq_ladder(void)
+{
+	uint32_t cpu = 0;
+	long temp = 0;
+	long hottest = LONG_MIN;
+	int level = freq_ladder_level;
+	bool stale = false;
+
+	for_each_possible_cpu(cpu) {
+		if (freq_ladder_zone[cpu] < 0)
+			freq_ladder_zone[cpu] = sensor_get_id(
+					(char *)cpus[cpu].sensor_type);
+		if (freq_ladder_zone[cpu] < 0 ||
+			therm_get_temp(freq_ladder_zone[cpu], THERM_ZONE_ID,
+				&temp))
+			continue;
+		hottest = max(hottest, temp);
+	}
+	if (hottest == LONG_MIN)
+		return;
+
+	while (level < freq_ladder_ct &&
+		hottest >= freq_ladder[level].trigger_degC)
+		level++;
+	while (level > 0 && hottest < freq_ladder[level - 1].clear_degC)
+		level--;
+
+	/*
+	 * disable_msm_thermal() resets every limited_max_freq when interrupt
+	 * mode starts, so a held level re-applies whenever a controlled CPU sits
+	 * above the ladder ceiling.
+	 */
+	for_each_possible_cpu(cpu) {
+		if ((msm_thermal_info.bootup_freq_control_mask & BIT(cpu)) &&
+			cpus[cpu].limited_max_freq > freq_ladder_max_freq)
+			stale = true;
+	}
+	if (level == freq_ladder_level && !stale)
+		return;
+
+	if (level != freq_ladder_level)
+		pr_info("CPU ladder level %d of %d, max frequency %u. Temp:%ld\n",
+			level, freq_ladder_ct,
+			level ? freq_ladder[level - 1].max_freq : UINT_MAX,
+			hottest);
+	freq_ladder_level = level;
+	freq_ladder_max_freq = level ? freq_ladder[level - 1].max_freq :
+			UINT_MAX;
+	apply_freq_ladder();
+}
+
 static void __ref do_freq_control(long temp)
 {
 	uint32_t cpu = 0;
 	uint32_t max_freq = cpus[cpu].limited_max_freq;
+
+	if (freq_ladder_ct) {
+		do_freq_ladder();
+		return;
+	}
 
 	if (temp >= msm_thermal_info.limit_temp_degC) {
 		if (limit_idx == limit_idx_low)
@@ -1353,16 +1451,24 @@ static void __ref check_temp(struct work_struct *work)
 			limit_init = 1;
 	}
 
-	do_core_control(temp);
-	do_vdd_restriction();
-	do_psm();
-	do_ocr();
+	/*
+	 * Interrupt mode's trip-based kthreads (do_hotplug(), do_freq_mitigation(),
+	 * do_thermal_monitor()) replace these four once polling_enabled drops to
+	 * 0; running both would manage the same rails/cores from two places.
+	 * do_freq_control()'s qcom,limit-temp ceiling has no such replacement
+	 * (see disable_msm_thermal()), so it always runs.
+	 */
+	if (polling_enabled) {
+		do_core_control(temp);
+		do_vdd_restriction();
+		do_psm();
+		do_ocr();
+	}
 	do_freq_control(temp);
 
 reschedule:
-	if (polling_enabled)
-		schedule_delayed_work(&check_temp_work,
-				msecs_to_jiffies(msm_thermal_info.poll_ms));
+	schedule_delayed_work(&check_temp_work,
+			msecs_to_jiffies(msm_thermal_info.poll_ms));
 }
 
 static int __ref msm_thermal_cpu_callback(struct notifier_block *nfb,
@@ -1519,6 +1625,10 @@ static __ref int do_freq_mitigation(void *data)
 					UINT_MAX;
 			max_freq_req = min(max_freq_req,
 					cpus[cpu].user_max_freq);
+			if (msm_thermal_info.bootup_freq_control_mask &
+				BIT(cpu))
+				max_freq_req = min(max_freq_req,
+						freq_ladder_max_freq);
 
 			min_freq_req = max(min_freq_limit,
 					cpus[cpu].user_min_freq);
@@ -1883,8 +1993,17 @@ static void __ref disable_msm_thermal(void)
 {
 	uint32_t cpu = 0;
 
-	/* make sure check_temp is no longer running */
-	cancel_delayed_work_sync(&check_temp_work);
+	/*
+	 * check_temp_work stays scheduled: interrupt mode's trip-based
+	 * hotplug_init()/freq_mitigation_init()/thermal_monitor_init()
+	 * below replace do_core_control(), do_vdd_restriction(), do_psm()
+	 * and do_ocr(), but qcom,limit-temp's do_freq_control() step has no
+	 * interrupt-mode equivalent (freq_mitigation_init() only wires
+	 * qcom,freq-mitigation-temp, a separate, higher threshold). check_temp()
+	 * itself gates the four superseded calls on polling_enabled and always
+	 * runs do_freq_control(), so cancelling the work here would silently
+	 * disable the qcom,limit-temp ceiling on every boot.
+	 */
 
 	get_online_cpus();
 	for_each_possible_cpu(cpu) {
@@ -3079,6 +3198,69 @@ PROBE_FREQ_EXIT:
 	return ret;
 }
 
+static int probe_freq_ladder(struct device_node *node,
+		struct platform_device *pdev)
+{
+	char *key = "qcom,freq-ladder";
+	u32 *cells = NULL;
+	int len = 0, ct = 0, i = 0, ret = 0;
+	uint32_t cpu = 0;
+
+	for_each_possible_cpu(cpu)
+		freq_ladder_zone[cpu] = -ENODEV;
+
+	if (!of_find_property(node, key, &len))
+		return 0;
+	if (len <= 0 || len % (3 * sizeof(u32))) {
+		ret = -EINVAL;
+		goto fail;
+	}
+	ct = len / (3 * sizeof(u32));
+
+	cells = kcalloc(ct * 3, sizeof(u32), GFP_KERNEL);
+	freq_ladder = devm_kzalloc(&pdev->dev, ct * sizeof(*freq_ladder),
+			GFP_KERNEL);
+	if (!cells || !freq_ladder) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+	ret = of_property_read_u32_array(node, key, cells, ct * 3);
+	if (ret)
+		goto fail;
+
+	/*
+	 * Each step clears below its own trigger, and triggers rise while
+	 * ceilings fall, so the level is a monotonic function of temperature
+	 * on each side of the hysteresis band.
+	 */
+	for (i = 0; i < ct; i++) {
+		freq_ladder[i].trigger_degC = cells[3 * i];
+		freq_ladder[i].clear_degC = cells[3 * i + 1];
+		freq_ladder[i].max_freq = cells[3 * i + 2];
+		if (freq_ladder[i].clear_degC >= freq_ladder[i].trigger_degC ||
+			!freq_ladder[i].max_freq ||
+			(i && (freq_ladder[i].trigger_degC <=
+				freq_ladder[i - 1].trigger_degC ||
+			freq_ladder[i].clear_degC <
+				freq_ladder[i - 1].clear_degC ||
+			freq_ladder[i].max_freq >=
+				freq_ladder[i - 1].max_freq))) {
+			ret = -EINVAL;
+			goto fail;
+		}
+	}
+	kfree(cells);
+	freq_ladder_ct = ct;
+	return 0;
+
+fail:
+	kfree(cells);
+	freq_ladder_ct = 0;
+	dev_err(&pdev->dev, "%s: invalid %s, step %d. err=%d\n",
+		KBUILD_MODNAME, key, i, ret);
+	return ret;
+}
+
 static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -3121,6 +3303,7 @@ static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 	key = "qcom,freq-control-mask";
 	ret = of_property_read_u32(node, key, &data.bootup_freq_control_mask);
 
+	ret = probe_freq_ladder(node, pdev);
 	ret = probe_cc(node, &data, pdev);
 
 	ret = probe_freq_mitigation(node, &data, pdev);
@@ -3185,6 +3368,12 @@ fail:
 
 static int msm_thermal_dev_exit(struct platform_device *inp_dev)
 {
+	/*
+	 * check_temp_work now stays scheduled across interrupt_mode_init()
+	 * (see disable_msm_thermal()), so teardown is the only remaining
+	 * place that cancels it.
+	 */
+	cancel_delayed_work_sync(&check_temp_work);
 	msm_thermal_ioctl_cleanup();
 	if (thresh) {
 		if (vdd_rstr_enabled)

@@ -214,7 +214,7 @@ ilp0100_error Ilp0100_defineMode(const Ilp0100_structFrameFormat FrameFormat)
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_stop()
+ilp0100_error Ilp0100_stop(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	ILP0100_LOG_FUNCTION_START();
@@ -926,7 +926,7 @@ ilp0100_error Ilp0100_setHDRFactor(uint8_t HDRFactor)
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_reset()
+ilp0100_error Ilp0100_reset(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	ILP0100_LOG_FUNCTION_START(NULL);
@@ -943,7 +943,7 @@ ilp0100_error Ilp0100_reset()
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_onTheFlyReset()
+ilp0100_error Ilp0100_onTheFlyReset(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	ILP0100_LOG_FUNCTION_START(NULL);
@@ -1719,7 +1719,7 @@ ilp0100_error Ilp0100_core_checkCrc(uint8_t* pData, uint32_t SizeInBytes, uint16
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_core_bootXp70()
+ilp0100_error Ilp0100_core_bootXp70(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	uint8_t SpiData;
@@ -1965,7 +1965,7 @@ ilp0100_error Ilp0100_core_defineMode(const Ilp0100_structFrameFormat FrameForma
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_core_stop()
+ilp0100_error Ilp0100_core_stop(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	HIF_ModeControl_te ModeControl=HIF_ModeControl_e_IDLE;
@@ -3233,7 +3233,7 @@ ilp0100_error Ilp0100_core_setHDRFactor(uint8_t HDRFactor)
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_core_reset()
+ilp0100_error Ilp0100_core_reset(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	ILP0100_LOG_FUNCTION_START();
@@ -3251,7 +3251,7 @@ ilp0100_error Ilp0100_core_reset()
  * \retval 		ILP0100_ERROR_NONE : Success
  * \retval 		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_core_onTheFlyReset()
+ilp0100_error Ilp0100_core_onTheFlyReset(void)
 {
 	ilp0100_error Ret=ILP0100_ERROR_NONE;
 	ILP0100_LOG_FUNCTION_START();

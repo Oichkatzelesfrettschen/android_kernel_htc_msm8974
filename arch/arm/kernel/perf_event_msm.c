@@ -463,17 +463,27 @@ static void scorpion_write_l2lpm(u32 val)
 	asm volatile("mcr p15, 3, %0, c15, c2, 0" : : "r" (val));
 }
 
+/*
+ * The VeNum event-selection register is VFP system register 11, which has
+ * no vmrs/vmsr name, and the integrated assembler rejects the equivalent
+ * "mrc/mcr p10, 7, Rt, c11, c0, 0" because ARMv7 reserves coprocessors 10
+ * and 11 for VFP and Advanced SIMD. The accessors emit the instruction
+ * words with Rt fixed to r0, 0xeefb0a10 to read and 0xeeeb0a10 to write;
+ * ARM and Thumb-2 share both encodings.
+ */
 static u32 scorpion_read_vlpm(void)
 {
-	u32 val;
+	register u32 val asm("r0");
 
-	asm volatile("mrc p10, 7, %0, c11, c0, 0" : "=r" (val));
+	asm volatile(".inst 0xeefb0a10" : "=r" (val));
 	return val;
 }
 
 static void scorpion_write_vlpm(u32 val)
 {
-	asm volatile("mcr p10, 7, %0, c11, c0, 0" : : "r" (val));
+	register u32 r0 asm("r0") = val;
+
+	asm volatile(".inst 0xeeeb0a10" : : "r" (r0));
 }
 
 /*

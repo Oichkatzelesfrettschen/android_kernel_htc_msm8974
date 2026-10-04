@@ -1634,6 +1634,7 @@ free_dst:
 	goto out;
 }
 
+#ifdef CONFIG_XFRM_SUB_POLICY
 static int inline
 xfrm_dst_alloc_copy(void **target, const void *src, int size)
 {
@@ -1645,6 +1646,7 @@ xfrm_dst_alloc_copy(void **target, const void *src, int size)
 	memcpy(*target, src, size);
 	return 0;
 }
+#endif
 
 static int inline
 xfrm_dst_update_parent(struct dst_entry *dst, const struct xfrm_selector *sel)

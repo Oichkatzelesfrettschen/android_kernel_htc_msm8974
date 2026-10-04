@@ -663,7 +663,7 @@ static int smp_encrypt_link(struct hci_conn *hcon, struct link_key *key)
 	u8 sec_level;
 	u8 zerobuf[8];
 
-	if (!hcon || !key || !key->data)
+	if (!hcon || !key)
 		return -EINVAL;
 
 	memset(zerobuf, 0, sizeof(zerobuf));

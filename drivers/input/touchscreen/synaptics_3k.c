@@ -788,8 +788,8 @@ static int syn_config_update(struct synaptics_ts_data *ts, int attr)
 		}
 	}
 
-	if ((ts->config != NULL && (ts->config[0] << 24 | ts->config[1] << 16 |
-		ts->config[2] << 8 | ts->config[3]) == ts->config_version)) {
+	if ((ts->config[0] << 24 | ts->config[1] << 16 |
+		ts->config[2] << 8 | ts->config[3]) == ts->config_version) {
 		ret = crc_comparison(ts, crc_checksum, attr);
 		if (ret < 0) {
 			pr_debug("%s: CRC comparison fail!\n", __func__);

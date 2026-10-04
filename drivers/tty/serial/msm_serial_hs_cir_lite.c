@@ -1973,7 +1973,6 @@ static struct platform_driver msm_hsl_platform_driver = {
 		.of_match_table = msm_hsl_match_table,
 	},
 };
-module_platform_driver(msm_hsl_platform_driver);
 
 static int __init msm_serial_hsl_init_cir(void)
 {

@@ -328,15 +328,33 @@ include $(srctree)/scripts/Kbuild.include
 
 # Make variables (CC, etc...)
 
-AS		= $(CROSS_COMPILE)as
+# LLVM=1 selects Clang, LLD and the LLVM binutils, LLVM=<dir>/ takes them
+# from that directory and LLVM=-<version> by suffix. A tool named on the
+# command line still wins, as vendor/lineage kernel.mk passes CC, LD and AR.
+ifneq ($(LLVM),)
+ifneq ($(filter %/,$(LLVM)),)
+LLVM_PREFIX	:= $(LLVM)
+else ifneq ($(filter -%,$(LLVM)),)
+LLVM_SUFFIX	:= $(LLVM)
+endif
+LD		= $(LLVM_PREFIX)ld.lld$(LLVM_SUFFIX)
+CC		= $(LLVM_PREFIX)clang$(LLVM_SUFFIX)
+AR		= $(LLVM_PREFIX)llvm-ar$(LLVM_SUFFIX)
+NM		= $(LLVM_PREFIX)llvm-nm$(LLVM_SUFFIX)
+STRIP		= $(LLVM_PREFIX)llvm-strip$(LLVM_SUFFIX)
+OBJCOPY		= $(LLVM_PREFIX)llvm-objcopy$(LLVM_SUFFIX)
+OBJDUMP		= $(LLVM_PREFIX)llvm-objdump$(LLVM_SUFFIX)
+else
 LD		= $(CROSS_COMPILE)ld
 CC		= $(CROSS_COMPILE)gcc
-CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
 STRIP		= $(CROSS_COMPILE)strip
 OBJCOPY		= $(CROSS_COMPILE)objcopy
 OBJDUMP		= $(CROSS_COMPILE)objdump
+endif
+AS		= $(CROSS_COMPILE)as
+CPP		= $(CC) -E
 AWK		= awk
 GENKSYMS	= scripts/genksyms/genksyms
 INSTALLKERNEL  := installkernel
@@ -378,13 +396,40 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
+		   -fno-delete-null-pointer-checks \
+		   $(call cc-option,-std=gnu89)
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_AFLAGS_MODULE  := -DMODULE
 KBUILD_CFLAGS_MODULE  := -DMODULE -fno-pic
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+
+# With LLVM set, Clang targets the ARM EABI that this tree's Clang build
+# uses: kernel.mk passes CC=clang with no target, and its CLANG_TRIPLE
+# (arm-linux-gnu) names no EABI. LLVM_IAS=0 assembles with the GNU as
+# that CROSS_COMPILE names instead of the integrated assembler.
+ifneq ($(LLVM),)
+CLANG_TARGET_FLAGS_arm	:= arm-linux-gnueabi
+ifeq ($(CLANG_TARGET_FLAGS_$(SRCARCH)),)
+$(error LLVM=$(LLVM) has no Clang target for ARCH=$(SRCARCH))
+endif
+CLANG_FLAGS	:= --target=$(CLANG_TARGET_FLAGS_$(SRCARCH))
+ifeq ($(LLVM_IAS),0)
+ifeq ($(CROSS_COMPILE),)
+$(error LLVM_IAS=0 requires CROSS_COMPILE to name the GNU assembler)
+endif
+CLANG_FLAGS	+= -no-integrated-as \
+		   --prefix=$(dir $(shell which $(CROSS_COMPILE)as))$(notdir $(CROSS_COMPILE))
+else
+# Mainline's CONFIG_AS_IS_LLVM: Clang's integrated assembler builds the
+# .S files and the inline asm.
+AS_IS_LLVM	:= y
+endif
+KBUILD_CFLAGS	+= $(CLANG_FLAGS)
+KBUILD_AFLAGS	+= $(CLANG_FLAGS)
+export CLANG_FLAGS
+endif
 
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
@@ -580,6 +625,50 @@ endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
 
+ifdef CONFIG_LTO_CLANG
+# Kconfig cannot probe the toolchain here, so the build checks it: bitcode
+# objects need Clang to emit them, LLD to optimize them, and the LLVM NM and
+# AR to read them; LLD assembles inline asm with the integrated assembler.
+ifeq ($(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -c '__clang__'),0)
+$(error CONFIG_LTO_CLANG requires CC to be Clang: $(CC))
+endif
+ifeq ($(shell $(LD) --version 2>/dev/null | grep -c LLD),0)
+$(error CONFIG_LTO_CLANG requires LD to be ld.lld: $(LD))
+endif
+ifeq ($(shell $(NM) --help 2>/dev/null | head -n 1 | grep -ci llvm),0)
+$(error CONFIG_LTO_CLANG requires NM to be llvm-nm: $(NM))
+endif
+ifeq ($(shell $(AR) --help 2>/dev/null | head -n 1 | grep -ci llvm),0)
+$(error CONFIG_LTO_CLANG requires AR to be llvm-ar: $(AR))
+endif
+ifneq ($(filter -no-integrated-as -fno-integrated-as,$(CC) $(KBUILD_CFLAGS) $(KBUILD_AFLAGS)),)
+$(error CONFIG_LTO_CLANG requires the integrated assembler)
+endif
+
+ifdef CONFIG_LTO_CLANG_THIN
+CC_FLAGS_LTO	:= -flto=thin -fsplit-lto-unit
+# A ThinLTO cache hit replays a module's native object without running its
+# codegen, so the diagnostics codegen raises (inline asm among them) never
+# print and --fatal-warnings has nothing to fail on. The cache is opt-in:
+# KBUILD_THINLTO_CACHE names its directory, and a warnings-as-errors gate
+# leaves it unset.
+LDFLAGS_LTO	:= $(if $(KBUILD_THINLTO_CACHE),--thinlto-cache-dir=$(KBUILD_THINLTO_CACHE))
+else
+CC_FLAGS_LTO	:= -flto
+LDFLAGS_LTO	:=
+endif
+# Limit inlining across translation units to reduce binary size.
+LDFLAGS_LTO	+= -mllvm -import-instr-limit=5
+# Symbols keep default visibility: this static, non-PIC kernel has no GOT
+# to avoid, and a hidden global turns local in vmlinux, which would change
+# its /proc/kallsyms type from 'T' to 't'.
+# Objects whose output is read as native ELF or assembly text add this.
+DISABLE_LTO	:= -fno-lto
+
+KBUILD_CFLAGS	+= $(CC_FLAGS_LTO)
+export CC_FLAGS_LTO LDFLAGS_LTO DISABLE_LTO
+endif
+
 ifneq ($(CONFIG_FRAME_WARN),0)
 KBUILD_CFLAGS += $(call cc-option,-Wframe-larger-than=${CONFIG_FRAME_WARN})
 endif
@@ -608,9 +697,40 @@ endif
 
 KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
+# Clang 15 and later, and some distribution GCCs, default to PIE; the kernel
+# is linked at a fixed address and expects absolute code and data.
+KBUILD_CFLAGS	+= $(call cc-option, -fno-PIE)
+KBUILD_AFLAGS	+= $(call cc-option, -fno-PIE)
+
+# Clang warnings mainline Linux leaves off for kernel builds (v5.10 Makefile
+# and scripts/Makefile.extrawarn): packed-member addresses, the kernel's %p
+# format extensions, GNU C extensions, designated-initializer overrides,
+# unused const tables, and out-of-range constant compares in generic macros.
+# cc-disable-warning adds each only where the compiler knows it, so a GCC
+# 4.9 build keeps its flags.
+KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, format-invalid-specifier)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, gnu)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, initializer-overrides)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, unused-const-variable)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, tautological-constant-out-of-range-compare)
+
 ifdef CONFIG_DEBUG_INFO
-KBUILD_CFLAGS	+= -g
+# clang 5+ defaults -g to DWARF5, whose .file directives are 0-indexed;
+# this tree's binutils (GNU as 2.2x, GCC 4.9-era) reads DWARF <= 4, where
+# file numbering starts at 1, and rejects "file 0" as "file number less
+# than one". -gdwarf-4 is accepted by both compilers (GCC has taken
+# -gdwarf-<N> since long before 4.9) and keeps the emitted line tables
+# inside what this tree's assembler parses.
+KBUILD_CFLAGS	+= -g $(call cc-option, -gdwarf-4)
+# The integrated assembler takes the C flags: a DWARF 4 unit spans every
+# section a .S file switches to through DW_AT_ranges, where DWARF 2 holds
+# one. GNU as accepts --gdwarf-4 from 2.35 on, so its path keeps DWARF 2.
+ifeq ($(AS_IS_LLVM),y)
+KBUILD_AFLAGS	+= -g -gdwarf-4
+else
 KBUILD_AFLAGS	+= -gdwarf-2
+endif
 endif
 
 ifdef CONFIG_DEBUG_INFO_REDUCED
@@ -776,6 +896,34 @@ vmlinux-all  := $(vmlinux-init) $(vmlinux-main)
 vmlinux-lds  := arch/$(SRCARCH)/kernel/vmlinux.lds
 export KBUILD_VMLINUX_OBJS := $(vmlinux-all)
 
+ifdef CONFIG_LTO_CLANG
+# One relocatable LLD link turns the bitcode of every vmlinux object into
+# native code in vmlinux.o, and kallsyms and the final link reuse it. The
+# built-in.o thin archives are linked whole; lib.a archives keep lazy member
+# selection. The generated script lists every initcall section in link
+# order, and the link fails and removes vmlinux.o when one escapes it,
+# because vmlinux.lds collects only the merged level sections.
+vmlinux-lto-inputs = $(vmlinux-init) --start-group \
+	$(foreach input,$(vmlinux-main),$(if $(filter %.a,$(input)),\
+	--no-whole-archive $(input) --whole-archive,$(input))) --end-group
+vmlinux-lto-scripts := $(srctree)/scripts/generate_initcall_order.pl
+
+quiet_cmd_vmlinux__ = LD      $@
+      cmd_vmlinux__ = $(LD) $(LDFLAGS) $(LDFLAGS_vmlinux) -o $@ \
+      -T $(vmlinux-lds) vmlinux.o                                \
+      $(filter-out $(vmlinux-lds) $(vmlinux-init) $(vmlinux-main) vmlinux.o FORCE ,$^)
+
+quiet_cmd_vmlinux-modpost = LTO     $@
+      cmd_vmlinux-modpost = $(PERL) $(srctree)/scripts/generate_initcall_order.pl \
+	 $(vmlinux-init) $(vmlinux-main) > .tmp_initcalls.lds &&                \
+	 $(LD) $(LDFLAGS) -r $(LDFLAGS_LTO) -T .tmp_initcalls.lds -o $@          \
+	 --whole-archive $(vmlinux-lto-inputs) --no-whole-archive               \
+	 $(filter-out $(vmlinux-init) $(vmlinux-main) $(vmlinux-lto-scripts) FORCE ,$^) && \
+	 $(OBJDUMP) -h $@ > .tmp_vmlinux.o.sections &&                           \
+	 ! grep -q 'initcall[0-9a-z]*\.init\.\.' .tmp_vmlinux.o.sections ||   \
+	 { rm -f $@; false; }
+endif
+
 # Rule to link vmlinux - also used during CONFIG_KALLSYMS
 # May be overridden by arch/$(ARCH)/Makefile
 quiet_cmd_vmlinux__ ?= LD      $@
@@ -807,10 +955,10 @@ quiet_cmd_sysmap = SYSMAP
 # First command is ':' to allow us to use + in front of the rule
 define rule_vmlinux__
 	:
-	$(if $(CONFIG_KALLSYMS),,+$(call cmd,vmlinux_version))
+	$(if $(CONFIG_LTO_CLANG)$(CONFIG_KALLSYMS),,+$(call cmd,vmlinux_version))
 
 	$(call cmd,vmlinux__)
-	$(Q)echo 'cmd_$@ := $(cmd_vmlinux__)' > $(@D)/.$(@F).cmd
+	$(Q)echo 'cmd_$@ := $(call make-cmd,vmlinux__)' > $(@D)/.$(@F).cmd
 
 	$(Q)$(if $($(quiet)cmd_sysmap),                                      \
 	  echo '  $($(quiet)cmd_sysmap)  System.map' &&)                     \
@@ -868,9 +1016,9 @@ endef
 cmd_ksym_ld = $(cmd_vmlinux__)
 define rule_ksym_ld
 	: 
-	+$(call cmd,vmlinux_version)
+	$(if $(CONFIG_LTO_CLANG),,+$(call cmd,vmlinux_version))
 	$(call cmd,vmlinux__)
-	$(Q)echo 'cmd_$@ := $(cmd_vmlinux__)' > $(@D)/.$(@F).cmd
+	$(Q)echo 'cmd_$@ := $(call make-cmd,vmlinux__)' > $(@D)/.$(@F).cmd
 endef
 
 # Generate .S file with all kernel symbols
@@ -912,15 +1060,20 @@ endif # ifdef CONFIG_KALLSYMS
 
 # Do modpost on a prelinked vmlinux. The finally linked vmlinux has
 # relevant sections renamed as per the linker script.
+# With LTO, init/version.o is part of vmlinux.o, so the version advances
+# before this link rather than before the kallsyms and final links.
+ifndef CONFIG_LTO_CLANG
 quiet_cmd_vmlinux-modpost = LD      $@
       cmd_vmlinux-modpost = $(LD) $(LDFLAGS) -r -o $@                          \
 	 $(vmlinux-init) --start-group $(vmlinux-main) --end-group             \
 	 $(filter-out $(vmlinux-init) $(vmlinux-main) FORCE ,$^)
+endif
 define rule_vmlinux-modpost
 	:
+	$(if $(CONFIG_LTO_CLANG),+$(call cmd,vmlinux_version))
 	+$(call cmd,vmlinux-modpost)
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost $@
-	$(Q)echo 'cmd_$@ := $(cmd_vmlinux-modpost)' > $(dot-target).cmd
+	$(Q)echo 'cmd_$@ := $(call make-cmd,vmlinux-modpost)' > $(dot-target).cmd
 endef
 
 # vmlinux image - including updated kernel symbols
@@ -943,7 +1096,13 @@ ifdef CONFIG_KALLSYMS
 .tmp_vmlinux1: vmlinux.o
 endif
 
+ifdef CONFIG_LTO_CLANG
+# Every link after the LTO link reads vmlinux.o.
+.tmp_vmlinux2 .tmp_vmlinux3: vmlinux.o
+modpost-init := $(vmlinux-init) $(vmlinux-lto-scripts)
+else
 modpost-init := $(filter-out init/built-in.o, $(vmlinux-init))
+endif
 vmlinux.o: $(modpost-init) $(vmlinux-main) FORCE
 	$(call if_changed_rule,vmlinux-modpost)
 
@@ -1175,8 +1334,8 @@ endif # CONFIG_MODULES
 # make distclean Remove editor backup files, patch leftover files and the like
 
 # Directories & files removed with 'make clean'
-CLEAN_DIRS  += $(MODVERDIR)
-CLEAN_FILES +=	vmlinux System.map \
+CLEAN_DIRS  += $(MODVERDIR) .thinlto-cache $(KBUILD_THINLTO_CACHE)
+CLEAN_FILES +=	vmlinux System.map .tmp_initcalls.lds \
                 .tmp_kallsyms* .tmp_version .tmp_vmlinux* .tmp_System.map
 
 # Directories & files removed with 'make mrproper'

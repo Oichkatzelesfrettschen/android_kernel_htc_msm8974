@@ -1176,7 +1176,8 @@ int32_t msm_actuator_piezo_set_default_focus(
 		a_ctrl->func_tbl->actuator_parse_i2c_params(a_ctrl,
 			a_ctrl->initial_code, 0, 0);
 		reg_setting.reg_setting = a_ctrl->i2c_reg_tbl;
-		reg_setting.data_type = a_ctrl->i2c_data_type;
+		reg_setting.data_type =
+			msm_actuator_i2c_data_type(a_ctrl->i2c_data_type);
 		reg_setting.size = a_ctrl->i2c_tbl_index;
 		rc = a_ctrl->i2c_client.i2c_func_tbl->
 			i2c_write_table_w_microdelay(
@@ -1444,7 +1445,8 @@ int32_t msm_actuator_piezo_move_focus(
 		ringing_params_kernel.hw_params, 0);
 
 	reg_setting.reg_setting = a_ctrl->i2c_reg_tbl;
-	reg_setting.data_type = a_ctrl->i2c_data_type;
+	reg_setting.data_type =
+		msm_actuator_i2c_data_type(a_ctrl->i2c_data_type);
 	reg_setting.size = a_ctrl->i2c_tbl_index;
 	rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write_table_w_microdelay(
 		&a_ctrl->i2c_client, &reg_setting);
@@ -1570,7 +1572,8 @@ static int32_t msm_actuator_move_focus(
 	else {
 		move_params->curr_lens_pos = curr_lens_pos;
 		reg_setting.reg_setting = a_ctrl->i2c_reg_tbl;
-		reg_setting.data_type = a_ctrl->i2c_data_type;
+		reg_setting.data_type =
+			msm_actuator_i2c_data_type(a_ctrl->i2c_data_type);
 		reg_setting.size = a_ctrl->i2c_tbl_index;
 		rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write_table_w_microdelay(
 				&a_ctrl->i2c_client, &reg_setting);
@@ -1761,7 +1764,8 @@ static int32_t msm_actuator_set_position(
 
 		reg_setting.reg_setting = a_ctrl->i2c_reg_tbl;
 		reg_setting.size = a_ctrl->i2c_tbl_index;
-		reg_setting.data_type = a_ctrl->i2c_data_type;
+		reg_setting.data_type =
+			msm_actuator_i2c_data_type(a_ctrl->i2c_data_type);
 
 		rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write_table_w_microdelay(
 			&a_ctrl->i2c_client, &reg_setting);
@@ -1832,8 +1836,9 @@ static int32_t msm_actuator_init(struct msm_actuator_ctrl_t *a_ctrl,
 	}
 
 	a_ctrl->i2c_data_type = set_info->actuator_params.i2c_data_type;
-	a_ctrl->i2c_client.addr_type = set_info->actuator_params.i2c_addr_type;
-	a_ctrl->i2c_seq_reg_setting.addr_type = set_info->actuator_params.i2c_addr_type;
+	a_ctrl->i2c_client.addr_type = msm_actuator_i2c_addr_type(
+		set_info->actuator_params.i2c_addr_type);
+	a_ctrl->i2c_seq_reg_setting.addr_type = a_ctrl->i2c_client.addr_type;
 	a_ctrl->act_i2c_select = set_info->act_i2c_select;
 	CDBG("act_i2c_select : %d\n",a_ctrl->act_i2c_select);
 	if (set_info->actuator_params.reg_tbl_size <=

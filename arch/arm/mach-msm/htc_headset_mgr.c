@@ -761,6 +761,13 @@ static void mic_detect_work_func(struct work_struct *work)
 			pr_debug("MIC polling timeout (UNKNOWN/Floating MIC status)\n");
 #ifdef CONFIG_HTC_HEADSET_INT_REDETECT
 			hi->plugout_redetect = 0;
+			/* HPIN reports the plug inserted and stable while the
+			 * mic contact still floats: the plug is seated with its
+			 * mic off, so its headphones are reported. A key event
+			 * on HEADSET_UNKNOWN_MIC re-polls the mic. */
+			if (mic == HEADSET_UNPLUG && hi->is_ext_insert &&
+			    hs_hpin_stable())
+				mic = HEADSET_UNKNOWN_MIC;
 #else
 			mutex_unlock(&hi->mutex_lock);
 #ifdef CONFIG_HTC_HEADSET_DET_DEBOUNCE
@@ -817,6 +824,10 @@ static void mic_detect_work_func(struct work_struct *work)
 	case HEADSET_METRICO:
 		new_state |= BIT_HEADSET;
 		pr_debug("HEADSET_METRICO\n");
+		break;
+	case HEADSET_UNKNOWN_MIC:
+		new_state |= BIT_HEADSET_NO_MIC;
+		pr_debug("HEADSET_UNKNOWN_MIC\n");
 		break;
 	case HEADSET_TV_OUT:
 		new_state |= BIT_TV_OUT;
@@ -1105,6 +1116,23 @@ static void insert_detect_work_func(struct work_struct *work)
 
 	mutex_lock(&hi->mutex_lock);
 
+	/* hs_notify_plug_event clears is_ext_insert under mutex_lock and then
+	 * waits for this work, so a plug that left during the bias and settle
+	 * delays reads as removed here. An unplugged mic line under bias reads
+	 * inside the microphone window; the remove work queued behind this one
+	 * turns the bias off. */
+	if (!hi->is_ext_insert) {
+		mutex_unlock(&hi->mutex_lock);
+#ifdef CONFIG_HTC_INSERT_NOTIFY_DELAY
+		if (hs_mgr_notifier.hs_insert)
+			hs_mgr_notifier.hs_insert(0);
+#endif
+		if (hs_mgr_notifier.key_int_enable)
+			hs_mgr_notifier.key_int_enable(1);
+		pr_debug("Headset removed during insert detection\n");
+		return;
+	}
+
 	hi->one_wire_mode = 0;
 #ifdef CONFIG_HTC_HEADSET_INT_REDETECT
 	if (hi->driver_one_wire_exist && adc > 915 && adc < hi->pdata.headset_config[0].adc_max) {
@@ -1124,8 +1152,8 @@ static void insert_detect_work_func(struct work_struct *work)
 			switch_set_state(&hi->sdev_h2w, new_state);
 			hi->hs_35mm_type = HEADSET_ONEWIRE;
 			mutex_unlock(&hi->mutex_lock);
-		if (hs_mgr_notifier.key_int_enable)
-			hs_mgr_notifier.key_int_enable(1);
+			if (hs_mgr_notifier.key_int_enable)
+				hs_mgr_notifier.key_int_enable(1);
 			return;
 		} else {
 			hi->one_wire_mode = 0;
@@ -1135,6 +1163,25 @@ static void insert_detect_work_func(struct work_struct *work)
 		}
 	}
 	mic = get_mic_status();
+
+	/* A removal during the mic sample reaches is_ext_insert only after
+	 * this work releases mutex_lock, so read HPIN after the sample. An
+	 * open pin reruns the detection: hs_notify_plug_event cancels the
+	 * rerun on a removal, and the rerun classifies a pin that closed again
+	 * without a reported edge. */
+	if (hs_mgr_notifier.hpin_gpio() == 1) {
+		mutex_unlock(&hi->mutex_lock);
+#ifdef CONFIG_HTC_INSERT_NOTIFY_DELAY
+		if (hs_mgr_notifier.hs_insert)
+			hs_mgr_notifier.hs_insert(0);
+#endif
+		if (hs_mgr_notifier.key_int_enable)
+			hs_mgr_notifier.key_int_enable(1);
+		queue_delayed_work(detect_wq, &insert_detect_work,
+				   HS_JIFFIES_INSERT);
+		return;
+	}
+
 	if (hi->pdata.driver_flag & DRIVER_HS_MGR_FLOAT_DET) {
 		pr_debug("Headset float detect enable\n");
 		if (mic == HEADSET_UNPLUG) {
@@ -1148,6 +1195,11 @@ static void insert_detect_work_func(struct work_struct *work)
 #ifdef CONFIG_HTC_HEADSET_INT_REDETECT
 			if (hs_mgr_notifier.key_int_enable)
 				hs_mgr_notifier.key_int_enable(1);
+			/* A floating mic contact is either a plug still seating
+			 * or a seated plug whose mic is switched off. Polling
+			 * classifies the plug once it seats, and a poll that
+			 * ends still floating reports headphones. */
+			update_mic_status(HS_DEF_MIC_DETECT_COUNT);
 #else
 			
 #ifdef CONFIG_HTC_HEADSET_DET_DEBOUNCE

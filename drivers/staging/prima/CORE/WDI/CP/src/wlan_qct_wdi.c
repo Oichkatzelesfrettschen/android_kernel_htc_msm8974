@@ -24621,7 +24621,7 @@ case WLAN_HAL_DEL_STA_SELF_RSP:
   case WLAN_HAL_FATAL_EVENT_LOGGING_RSP:
        return WDI_FATAL_EVENT_LOGGING_RSP;
   default:
-    return eDRIVER_TYPE_MAX;
+    return WDI_UNKNOWN_RESP;
   }
 
 }/*HAL_2_WDI_RSP_TYPE*/
@@ -29875,7 +29875,7 @@ void WDI_TransportChannelDebug
  @see
  @return none
 */
-void WDI_TransportKickDxe()
+void WDI_TransportKickDxe(void)
 {
    WDTS_ChannelKickDxe();
    return;

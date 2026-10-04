@@ -11,11 +11,17 @@
 #define FSR_FS5_0		(0x3f)
 
 #ifdef CONFIG_ARM_LPAE
+#define FS_PERM_NOLL		0xC
+#define FS_PERM_NOLL_MASK	0x3C
+
 static inline int fsr_fs(unsigned int fsr)
 {
 	return fsr & FSR_FS5_0;
 }
 #else
+#define FS_L1_PERM		0xD
+#define FS_L2_PERM		0xF
+
 static inline int fsr_fs(unsigned int fsr)
 {
 	return (fsr & FSR_FS3_0) | (fsr & FSR_FS4) >> 6;

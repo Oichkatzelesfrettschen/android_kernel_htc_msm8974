@@ -112,20 +112,6 @@ static struct sock *__l2cap_get_chan_by_dcid(struct l2cap_chan_list *l, u16 cid)
 	return s;
 }
 
-/* Find channel with given DCID.
- * Returns locked socket */
-static inline struct sock *l2cap_get_chan_by_dcid(struct l2cap_chan_list *l,
-						u16 cid)
-{
-	struct sock *s;
-	read_lock(&l->lock);
-	s = __l2cap_get_chan_by_dcid(l, cid);
-	if (s)
-		bh_lock_sock(s);
-	read_unlock(&l->lock);
-	return s;
-}
-
 static struct sock *__l2cap_get_chan_by_scid(struct l2cap_chan_list *l, u16 cid)
 {
 	struct sock *s;

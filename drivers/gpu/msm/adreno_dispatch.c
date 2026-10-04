@@ -44,6 +44,23 @@ static unsigned int _context_cmdbatch_burst = 5;
 static unsigned int _fault_throttle_time = 3000;
 static unsigned int _fault_throttle_burst = 3;
 
+/*
+ * A detach-timeout fault (ADRENO_CTX_DETATCH_TIMEOUT_FAULT) names no
+ * guilty command, since the CP cannot preempt the ring and the oldest
+ * command may belong to a healthy context; it resets and replays
+ * unconditionally instead of going through the per-context GFT
+ * throttle above. That throttle exists precisely to stop an
+ * unbounded reset loop, so track detach-timeout-only faults across
+ * the whole device the same way: more than _detach_fault_throttle_burst
+ * within _detach_fault_throttle_time disables FT for the oldest
+ * in-flight command and lets the existing invalidate-on-disable path
+ * below stop the loop, instead of resetting forever.
+ */
+static unsigned int _detach_fault_throttle_time = 3000;
+static unsigned int _detach_fault_throttle_burst = 3;
+static unsigned long _detach_fault_time;
+static unsigned int _detach_fault_count;
+
 /* Number of command batches inflight in the ringbuffer at any time */
 static unsigned int _dispatcher_inflight = 15;
 
@@ -1069,6 +1086,35 @@ static void remove_invalidated_cmdbatches(struct kgsl_device *device,
 	}
 }
 
+/*
+ * detach_invalidate_contexts() - Invalidate the detached contexts in flight
+ * @device: Pointer to the KGSL device
+ * @replay: Command batches that were in flight at the fault
+ * @count: Number of entries in @replay
+ *
+ * Runs with the device mutex held and after adreno_reset(), so the GPU has
+ * stopped addressing the contexts' memory before adreno_drawctxt_detach(),
+ * which waits on the timeout queue for the invalid state, frees it.
+ */
+static void detach_invalidate_contexts(struct kgsl_device *device,
+		struct kgsl_cmdbatch **replay, int count)
+{
+	int i;
+
+	for (i = 0; i < count; i++) {
+		struct kgsl_context *context;
+
+		if (replay[i] == NULL)
+			continue;
+
+		context = replay[i]->context;
+		if (kgsl_context_detached(context) &&
+			ADRENO_CONTEXT(context)->state !=
+				ADRENO_CONTEXT_STATE_INVALID)
+			adreno_drawctxt_invalidate(device, context);
+	}
+}
+
 static char _pidname[TASK_COMM_LEN];
 
 static inline const char *_kgsl_context_comm(struct kgsl_context *context)
@@ -1150,6 +1196,7 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 	int ret, i, count = 0;
 	int fault, first = 0;
 	bool pagefault = false;
+	bool detach_fault = false;
 
 	fault = atomic_xchg(&dispatcher->fault, 0);
 	if (fault == 0)
@@ -1185,7 +1232,7 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 	 * get activity while we are trying to dump the state of the system
 	 */
 
-	if (fault & ADRENO_TIMEOUT_FAULT) {
+	if (fault & (ADRENO_TIMEOUT_FAULT | ADRENO_CTX_DETATCH_TIMEOUT_FAULT)) {
 		adreno_readreg(adreno_dev, ADRENO_REG_CP_ME_CNTL, &reg);
 		reg |= (1 << 27) | (1 << 28);
 		adreno_writereg(adreno_dev, ADRENO_REG_CP_ME_CNTL, reg);
@@ -1254,6 +1301,53 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 	 */
 
 	cmdbatch = replay[0];
+
+	/*
+	 * A detach-timeout fault means a detached context still has commands
+	 * in flight, and it names no faulty command: the oldest command may
+	 * belong to a healthy context. Reset the GPU, then invalidate every
+	 * detached context in flight (see detach_invalidate_contexts()) and
+	 * replay the rest. Any other fault raised alongside it takes the
+	 * policy below.
+	 */
+	if (fault & ADRENO_CTX_DETATCH_TIMEOUT_FAULT) {
+		detach_fault = true;
+
+		for (i = 0; i < count; i++) {
+			struct kgsl_context *context = replay[i]->context;
+
+			if (!kgsl_context_detached(context) ||
+				ADRENO_CONTEXT(context)->state ==
+					ADRENO_CONTEXT_STATE_INVALID)
+				continue;
+
+			pr_fault(device, replay[i],
+				"gpu detached ctx %d ts %d\n",
+				context->id, replay[i]->timestamp);
+			mark_guilty_context(device, context->id);
+		}
+
+		if (!(fault & ~ADRENO_CTX_DETATCH_TIMEOUT_FAULT)) {
+			if (time_after(jiffies, _detach_fault_time +
+					msecs_to_jiffies(
+						_detach_fault_throttle_time))) {
+				_detach_fault_time = jiffies;
+				_detach_fault_count = 1;
+			} else {
+				_detach_fault_count++;
+			}
+
+			if (_detach_fault_count <=
+					_detach_fault_throttle_burst)
+				goto replay;
+
+			pr_fault(device, cmdbatch,
+				"gpu detach-fault threshold exceeded %d faults in %d msecs\n",
+				_detach_fault_throttle_burst,
+				_detach_fault_throttle_time);
+			set_bit(KGSL_FT_DISABLE, &cmdbatch->fault_policy);
+		}
+	}
 
 	/*
 	 * If GFT recovered more than X times in Y ms invalidate the context
@@ -1427,6 +1521,8 @@ replay:
 	BUG_ON(ret);
 
 	kgsl_mutex_lock(&device->mutex, &device->mutex_owner);
+	if (detach_fault)
+		detach_invalidate_contexts(device, replay, count);
 	/* Remove any pending command batches that have been invalidated */
 	remove_invalidated_cmdbatches(device, replay, count);
 	kgsl_mutex_unlock(&device->mutex, &device->mutex_owner);
@@ -1482,13 +1578,6 @@ replay:
 	kfree(replay);
 
 	return 1;
-}
-
-static inline int cmdbatch_consumed(struct kgsl_cmdbatch *cmdbatch,
-		unsigned int consumed, unsigned int retired)
-{
-	return ((timestamp_cmp(cmdbatch->timestamp, consumed) >= 0) &&
-		(timestamp_cmp(retired, cmdbatch->timestamp) < 0));
 }
 
 static void _print_recovery(struct kgsl_device *device,

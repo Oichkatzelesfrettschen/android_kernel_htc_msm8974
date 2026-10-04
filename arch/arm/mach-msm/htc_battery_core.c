@@ -119,12 +119,10 @@ static enum power_supply_property htc_battery_properties[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CAPACITY,
-	POWER_SUPPLY_PROP_OVERLOAD,
 	POWER_SUPPLY_PROP_INPUT_CURRENT_MAX,
 	POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED,
 	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 	POWER_SUPPLY_PROP_INPUT_VOLTAGE_REGULATION,
-	POWER_SUPPLY_PROP_USB_OVERHEAT,
 };
 
 static enum power_supply_property htc_power_properties[] = {
@@ -361,7 +359,7 @@ static ssize_t htc_battery_set_full_level_dis_batt_chg(struct device *dev,
 	return count;
 }
 
-int htc_battery_charger_disable()
+int htc_battery_charger_disable(void)
 {
 	int rc = 0;
 
@@ -376,7 +374,7 @@ int htc_battery_charger_disable()
 	return rc;
 }
 
-int htc_battery_pwrsrc_disable()
+int htc_battery_pwrsrc_disable(void)
 {
 	int rc = 0;
 
@@ -844,9 +842,6 @@ static int htc_battery_get_property(struct power_supply *psy,
 		val->intval = battery_core_info.rep.level;
 		mutex_unlock(&battery_core_info.info_lock);
 		break;
-	case POWER_SUPPLY_PROP_OVERLOAD:
-		val->intval = battery_core_info.rep.overload;
-		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_SETTLED:
@@ -858,9 +853,6 @@ static int htc_battery_get_property(struct power_supply *psy,
 				pr_debug("%s: function not ready. psp=%d\n", __func__, psp);
 		} else
 			pr_debug("%s: function doesn't exist! psp=%d\n", __func__, psp);
-		break;
-	case POWER_SUPPLY_PROP_USB_OVERHEAT:
-		val->intval = battery_core_info.rep.usb_overheat;
 		break;
 	default:
 		pr_debug("%s: invalid type, psp=%d\n", __func__, psp);

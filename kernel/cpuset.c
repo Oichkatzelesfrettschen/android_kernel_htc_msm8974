@@ -93,6 +93,9 @@ struct cpuset {
 
 	unsigned long flags;		/* "unsigned long" so bitops work */
 	cpumask_var_t cpus_allowed;	/* CPUs allowed to tasks in cpuset */
+	cpumask_var_t cpus_requested;	/* CPUs written to cpuset.cpus; kept
+					 * across hotplug, so cpus_allowed is
+					 * rebuilt from it as CPUs return */
 	nodemask_t mems_allowed;	/* Memory Nodes allowed to tasks */
 
 	struct cpuset *parent;		/* my parent */
@@ -368,7 +371,13 @@ static struct cpuset *alloc_trial_cpuset(const struct cpuset *cs)
 		kfree(trial);
 		return NULL;
 	}
+	if (!alloc_cpumask_var(&trial->cpus_requested, GFP_KERNEL)) {
+		free_cpumask_var(trial->cpus_allowed);
+		kfree(trial);
+		return NULL;
+	}
 	cpumask_copy(trial->cpus_allowed, cs->cpus_allowed);
+	cpumask_copy(trial->cpus_requested, cs->cpus_requested);
 
 	return trial;
 }
@@ -379,6 +388,7 @@ static struct cpuset *alloc_trial_cpuset(const struct cpuset *cs)
  */
 static void free_trial_cpuset(struct cpuset *trial)
 {
+	free_cpumask_var(trial->cpus_requested);
 	free_cpumask_var(trial->cpus_allowed);
 	kfree(trial);
 }
@@ -879,22 +889,34 @@ static int update_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 	 * with tasks have cpus.
 	 */
 	if (!*buf) {
-		cpumask_clear(trialcs->cpus_allowed);
+		cpumask_clear(trialcs->cpus_requested);
 	} else {
-		retval = cpulist_parse(buf, trialcs->cpus_allowed);
+		retval = cpulist_parse(buf, trialcs->cpus_requested);
 		if (retval < 0)
 			return retval;
-
-		if (!cpumask_subset(trialcs->cpus_allowed, cpu_active_mask))
-			return -EINVAL;
 	}
+
+	/*
+	 * The request may name CPUs that hotplug has taken offline; they
+	 * stay in cpus_requested and rejoin cpus_allowed when they return
+	 * (scan_for_empty_cpusets).
+	 */
+	if (!cpumask_subset(trialcs->cpus_requested, cpu_present_mask))
+		return -EINVAL;
+	cpumask_and(trialcs->cpus_allowed, trialcs->cpus_requested,
+		    cpu_active_mask);
+
 	retval = validate_change(cs, trialcs);
 	if (retval < 0)
 		return retval;
 
-	/* Nothing to do if the cpus didn't change */
-	if (cpumask_equal(cs->cpus_allowed, trialcs->cpus_allowed))
+	/* Record the request even when the effective CPUs are unchanged */
+	if (cpumask_equal(cs->cpus_allowed, trialcs->cpus_allowed)) {
+		mutex_lock(&callback_mutex);
+		cpumask_copy(cs->cpus_requested, trialcs->cpus_requested);
+		mutex_unlock(&callback_mutex);
 		return 0;
+	}
 
 	retval = heap_init(&heap, PAGE_SIZE, GFP_KERNEL, NULL);
 	if (retval)
@@ -904,6 +926,7 @@ static int update_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 
 	mutex_lock(&callback_mutex);
 	cpumask_copy(cs->cpus_allowed, trialcs->cpus_allowed);
+	cpumask_copy(cs->cpus_requested, trialcs->cpus_requested);
 	mutex_unlock(&callback_mutex);
 
 	/*
@@ -1592,7 +1615,7 @@ static size_t cpuset_sprintf_cpulist(char *page, struct cpuset *cs)
 	size_t count;
 
 	mutex_lock(&callback_mutex);
-	count = cpulist_scnprintf(page, PAGE_SIZE, cs->cpus_allowed);
+	count = cpulist_scnprintf(page, PAGE_SIZE, cs->cpus_requested);
 	mutex_unlock(&callback_mutex);
 
 	return count;
@@ -1832,6 +1855,7 @@ static void cpuset_post_clone(struct cgroup *cgroup)
 	mutex_lock(&callback_mutex);
 	cs->mems_allowed = parent_cs->mems_allowed;
 	cpumask_copy(cs->cpus_allowed, parent_cs->cpus_allowed);
+	cpumask_copy(cs->cpus_requested, parent_cs->cpus_requested);
 	mutex_unlock(&callback_mutex);
 	return;
 }
@@ -1857,6 +1881,11 @@ static struct cgroup_subsys_state *cpuset_create(struct cgroup *cont)
 		kfree(cs);
 		return ERR_PTR(-ENOMEM);
 	}
+	if (!alloc_cpumask_var(&cs->cpus_requested, GFP_KERNEL)) {
+		free_cpumask_var(cs->cpus_allowed);
+		kfree(cs);
+		return ERR_PTR(-ENOMEM);
+	}
 
 	cs->flags = 0;
 	if (is_spread_page(parent))
@@ -1865,6 +1894,7 @@ static struct cgroup_subsys_state *cpuset_create(struct cgroup *cont)
 		set_bit(CS_SPREAD_SLAB, &cs->flags);
 	set_bit(CS_SCHED_LOAD_BALANCE, &cs->flags);
 	cpumask_clear(cs->cpus_allowed);
+	cpumask_clear(cs->cpus_requested);
 	nodes_clear(cs->mems_allowed);
 	fmeter_init(&cs->fmeter);
 	cs->relax_domain_level = -1;
@@ -1888,6 +1918,7 @@ static void cpuset_destroy(struct cgroup *cont)
 		update_flag(CS_SCHED_LOAD_BALANCE, cs, 0);
 
 	number_of_cpusets--;
+	free_cpumask_var(cs->cpus_requested);
 	free_cpumask_var(cs->cpus_allowed);
 	kfree(cs);
 }
@@ -1917,8 +1948,11 @@ int __init cpuset_init(void)
 
 	if (!alloc_cpumask_var(&top_cpuset.cpus_allowed, GFP_KERNEL))
 		BUG();
+	if (!alloc_cpumask_var(&top_cpuset.cpus_requested, GFP_KERNEL))
+		BUG();
 
 	cpumask_setall(top_cpuset.cpus_allowed);
+	cpumask_setall(top_cpuset.cpus_requested);
 	nodes_setall(top_cpuset.mems_allowed);
 
 	fmeter_init(&top_cpuset.fmeter);
@@ -2013,8 +2047,10 @@ static void remove_tasks_in_empty_cpuset(struct cpuset *cs)
 }
 
 /*
- * Walk the specified cpuset subtree and look for empty cpusets.
- * The tasks of such cpuset must be moved to a parent cpuset.
+ * Walk the specified cpuset subtree, rebuild each cpuset's cpus_allowed
+ * from its cpus_requested, its parent's cpus_allowed and cpu_active_mask,
+ * and look for empty cpusets.  The tasks of such cpuset must be moved to
+ * a parent cpuset.
  *
  * Called with cgroup_mutex held.  We take callback_mutex to modify
  * cpus_allowed and mems_allowed.
@@ -2034,6 +2070,7 @@ static void scan_for_empty_cpusets(struct cpuset *root)
 	struct cpuset *child;	/* scans child cpusets of cp */
 	struct cgroup *cont;
 	static nodemask_t oldmems;	/* protected by cgroup_mutex */
+	static struct cpumask new_cpus;	/* protected by cgroup_mutex */
 
 	list_add_tail((struct list_head *)&root->stack_list, &queue);
 
@@ -2045,17 +2082,30 @@ static void scan_for_empty_cpusets(struct cpuset *root)
 			list_add_tail(&child->stack_list, &queue);
 		}
 
-		/* Continue past cpusets with all cpus, mems online */
-		if (cpumask_subset(cp->cpus_allowed, cpu_active_mask) &&
+		/* cpuset_update_active_cpus() sets top_cpuset itself */
+		if (cp == &top_cpuset)
+			continue;
+
+		/*
+		 * Rebuild the effective CPUs from the request, so a CPU that
+		 * hotplug brings back online rejoins every cpuset that asked
+		 * for it.  The queue is breadth-first, so cp->parent already
+		 * holds its own rebuilt mask.
+		 */
+		cpumask_and(&new_cpus, cp->cpus_requested,
+			    cp->parent->cpus_allowed);
+		cpumask_and(&new_cpus, &new_cpus, cpu_active_mask);
+
+		/* Continue past cpusets whose cpus and mems are unchanged */
+		if (cpumask_equal(cp->cpus_allowed, &new_cpus) &&
 		    nodes_subset(cp->mems_allowed, node_states[N_HIGH_MEMORY]))
 			continue;
 
 		oldmems = cp->mems_allowed;
 
-		/* Remove offline cpus and mems from this cpuset. */
+		/* Apply the rebuilt cpus and remove offline mems. */
 		mutex_lock(&callback_mutex);
-		cpumask_and(cp->cpus_allowed, cp->cpus_allowed,
-			    cpu_active_mask);
+		cpumask_copy(cp->cpus_allowed, &new_cpus);
 		nodes_and(cp->mems_allowed, cp->mems_allowed,
 						node_states[N_HIGH_MEMORY]);
 		mutex_unlock(&callback_mutex);

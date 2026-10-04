@@ -2061,12 +2061,10 @@ static int pp_ad_calc_bl(struct msm_fb_data_type *mfd, int bl_in, int *bl_out,
 		return -EPERM;
 	}
 
-	if (!ad->bl_mfd || !ad->bl_mfd->panel_info ||
-			!ad->bl_att_lut) {
-		pr_err("Invalid ad info: bl_mfd = 0x%pK, ad->bl_mfd->panel_info = 0x%pK, bl_att_lut = 0x%pK\n",
+	if (!ad->bl_mfd || !ad->bl_mfd->panel_info) {
+		pr_err("Invalid ad info: bl_mfd = 0x%pK, ad->bl_mfd->panel_info = 0x%pK\n",
 				ad->bl_mfd,
-				(!ad->bl_mfd) ? NULL : ad->bl_mfd->panel_info,
-				ad->bl_att_lut);
+				(!ad->bl_mfd) ? NULL : ad->bl_mfd->panel_info);
 		mutex_unlock(&ad->lock);
 		return -EINVAL;
 	}
@@ -4362,7 +4360,7 @@ int mdss_mdp_ad_input(struct msm_fb_data_type *mfd,
 	mutex_lock(&ad->lock);
 	if ((!PP_AD_STATE_IS_INITCFG(ad->state) &&
 			!PP_AD_STS_IS_DIRTY(ad->sts)) &&
-			!input->mode == MDSS_AD_MODE_CALIB) {
+			(input->mode != MDSS_AD_MODE_CALIB)) {
 		pr_warn("AD not initialized or configured.");
 		ret = -EPERM;
 		goto error;
@@ -5142,7 +5140,7 @@ static int is_valid_calib_dspp_addr(char __iomem *ptr)
 			ret = MDP_PP_OPS_READ | MDP_PP_OPS_WRITE;
 			break;
 		/* Dither enable/disable */
-		} else if ((ptr == base + MDSS_MDP_REG_DSPP_DITHER_DEPTH)) {
+		} else if (ptr == base + MDSS_MDP_REG_DSPP_DITHER_DEPTH) {
 			ret = MDP_PP_OPS_READ | MDP_PP_OPS_WRITE;
 			break;
 		/* Six zone and mem color */

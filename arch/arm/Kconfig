@@ -305,6 +305,8 @@ config ARCH_RANDOM
 
 source "init/Kconfig"
 
+source "arch/arm/Kconfig.lto"
+
 source "kernel/Kconfig.freezer"
 
 menu "System Type"
@@ -1747,12 +1749,10 @@ config THUMB2_KERNEL
 	bool "Compile the kernel in Thumb-2 mode (EXPERIMENTAL)"
 	depends on CPU_V7 && !CPU_V6 && !CPU_V6K && EXPERIMENTAL
 	select AEABI
-	select ARM_ASM_UNIFIED
 	select ARM_UNWIND
 	help
 	  By enabling this option, the kernel will be compiled in
-	  Thumb-2 mode. A compiler/assembler that understand the unified
-	  ARM-Thumb syntax is needed.
+	  Thumb-2 mode.
 
 	  If unsure, say N.
 
@@ -1787,9 +1787,6 @@ config THUMB2_AVOID_R_ARM_THM_JUMP11
 
 	  Unless you are sure your tools don't have this problem, say Y.
 
-config ARM_ASM_UNIFIED
-	bool
-
 config AEABI
 	bool "Use the ARM EABI to compile the kernel"
 	help
@@ -1821,8 +1818,6 @@ config OABI_COMPAT
 	  to execute a legacy ABI binary then the result will be
 	  UNPREDICTABLE (in fact it can be predicted that it won't work
 	  at all). If in doubt say Y.
-
-source kernel/Kconfig.hz
 
 config ARCH_HAS_HOLES_MEMORYMODEL
 	bool

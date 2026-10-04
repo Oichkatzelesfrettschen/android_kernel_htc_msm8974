@@ -100,6 +100,12 @@ name-fix = $(squote)$(quote)$(subst $(comma),_,$(subst -,_,$1))$(quote)$(squote)
 basename_flags = -DKBUILD_BASENAME=$(call name-fix,$(basetarget))
 modname_flags  = $(if $(filter 1,$(words $(modname))),\
                  -DKBUILD_MODNAME=$(call name-fix,$(modname)))
+ifdef CONFIG_LTO_CLANG
+# Initcall section and symbol names (include/linux/init.h) carry the object
+# path, which no two vmlinux objects share, as one C identifier token.
+initcall-name-fix = $(subst /,_,$(subst .,_,$(subst $(comma),_,$(subst -,_,$1))))
+modname_flags += -D__KBUILD_MODNAME=kmod_$(call initcall-name-fix,$(obj)/$(basetarget))
+endif
 
 orig_c_flags   = $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) $(KBUILD_SUBDIR_CCFLAGS) \
                  $(ccflags-y) $(CFLAGS_$(basetarget).o)

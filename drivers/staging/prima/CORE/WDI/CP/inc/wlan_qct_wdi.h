@@ -5295,8 +5295,12 @@ typedef struct
   WDI_MacSSid  ssId;
   wpt_uint8    currAPbssid[WDI_MAC_ADDR_LEN];
 
-  /*The authentication method of the preferred network*/
-  WDI_AuthType authentication;
+  /*
+   * The authentication method of the connected network, in the HAL
+   * tAuthType numbering that WDA_ConvertSirAuthToWDIAuth() produces and
+   * the roam offload request carries to firmware unchanged.
+   */
+  wpt_uint32   authentication;
 
   /*The encryption method of the preferred network*/
   WDI_EdType   encryption;

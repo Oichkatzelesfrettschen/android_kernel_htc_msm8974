@@ -671,14 +671,14 @@ requeue_req:
 			if (req->actual == 0) {
 				if (file_xfer_zlp_flag == 0)
 					goto requeue_req;
-					dev->rx_req = req;
-					mtp_req_put(dev, &dev->rx_idle, dev->rx_req);
-					INFO(cdev, "%s: got ZLP while file xfer.\n", __func__);
-					break;
-				}
 				dev->rx_req = req;
-				dev->read_count = req->actual;
-				dev->read_buf = req->buf;
+				mtp_req_put(dev, &dev->rx_idle, dev->rx_req);
+				INFO(cdev, "%s: got ZLP while file xfer.\n", __func__);
+				break;
+			}
+			dev->rx_req = req;
+			dev->read_count = req->actual;
+			dev->read_buf = req->buf;
 		}
 
 		if (ret < 0) {
@@ -1387,7 +1387,13 @@ mtp_function_bind(struct usb_configuration *c, struct usb_function *f)
 	id = usb_interface_id(c, f);
 	if (id < 0)
 		return id;
+	/*
+	 * The configuration numbers interfaces in bind order, and a PTP
+	 * binding presents ptp_interface_desc, so both descriptors carry the
+	 * allocated number.
+	 */
 	mtp_interface_desc.bInterfaceNumber = id;
+	ptp_interface_desc.bInterfaceNumber = id;
 
 	/* allocate endpoints */
 	ret = mtp_create_bulk_endpoints(dev, &mtp_fullspeed_in_desc,

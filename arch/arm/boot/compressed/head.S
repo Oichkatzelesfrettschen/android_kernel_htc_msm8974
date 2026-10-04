@@ -113,7 +113,7 @@
 #endif
 		.endm
 
-		.section ".start", #alloc, #execinstr
+		.section ".start", "ax"
 /*
  * sort out different calling conventions
  */
@@ -484,6 +484,19 @@ params:		ldr	r0, =0x10000100		@ params_phys for RPC
 		.ltorg
 		.align
 #endif
+
+/*
+ * The cache on, off and flush routines below run on whichever ARMv3 to
+ * ARMv7 core proc_types matches, and __armv7_mmu_cache_* also serves the
+ * ARMv6 cores that report the revised CPUID format.  Their barriers are
+ * the CP15 c7 operations every one of those cores defines, which ARMv7
+ * keeps but deprecates in favor of dsb, dmb and isb.  The routines
+ * assemble as ARMv6T2, the last architecture before ARMv7: it defines
+ * those CP15 operations without deprecating them, and its alignment
+ * padding is the same 0xe320f000 hint NOP that ARMv7 pads with.  The
+ * ARMv7 setting returns after them.
+ */
+		.arch	armv6t2
 
 /*
  * Turn on the cache.  We need to setup some page tables so that we
@@ -1110,7 +1123,7 @@ iflush:
 		mov	pc, lr
 
 __armv5tej_mmu_cache_flush:
-1:		mrc	p15, 0, r15, c7, c14, 3	@ test,clean,invalidate D cache
+1:		mrc	p15, 0, APSR_nzcv, c7, c14, 3	@ test,clean,invalidate D cache
 		bne	1b
 		mcr	p15, 0, r0, c7, c5, 0	@ flush I cache
 		mcr	p15, 0, r0, c7, c10, 4	@ drain WB
@@ -1153,6 +1166,8 @@ __armv3_mpu_cache_flush:
 		mov	r1, #0
 		mcr	p15, 0, r1, c7, c0, 0	@ invalidate whole cache v3
 		mov	pc, lr
+
+		.arch	armv7-a
 
 /*
  * Various debugging routines for printing hex characters and

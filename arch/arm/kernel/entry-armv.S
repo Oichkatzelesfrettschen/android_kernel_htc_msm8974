@@ -926,7 +926,7 @@ __kuser_cmpxchg64:				@ 0xffff0f60
 	smp_dmb	arm
 1:	ldrexd	r0, r1, [r2]			@ load current val
 	eors	r3, r0, r4			@ compare with oldval (1)
-	eoreqs	r3, r1, r5			@ compare with oldval (2)
+	eorseq	r3, r1, r5			@ compare with oldval (2)
 	strexdeq r3, r6, r7, [r2]		@ store newval if eq
 	teqeq	r3, #1				@ success?
 	beq	1b				@ if no then retry
