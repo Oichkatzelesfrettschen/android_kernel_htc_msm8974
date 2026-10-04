@@ -320,7 +320,7 @@ struct ion_heap *ion_removed_heap_create(struct ion_platform_heap *heap_data)
 		return ERR_PTR(-EINVAL);
 	}
 	removed_heap->heap.ops = &removed_heap_ops;
-	removed_heap->heap.type = ION_HEAP_TYPE_REMOVED;
+	removed_heap->heap.type = heap_data->type;
 	removed_heap->allocated_bytes = 0;
 	removed_heap->total_size = heap_data->size;
 
