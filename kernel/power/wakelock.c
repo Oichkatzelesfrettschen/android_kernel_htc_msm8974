@@ -66,14 +66,18 @@ static inline void increment_wakelocks_number(void)
 	number_of_wakelocks++;
 }
 
+#ifdef CONFIG_PM_WAKELOCKS_GC
 static inline void decrement_wakelocks_number(void)
 {
 	number_of_wakelocks--;
 }
+#endif /* CONFIG_PM_WAKELOCKS_GC */
 #else /* CONFIG_PM_WAKELOCKS_LIMIT = 0 */
 static inline bool wakelocks_limit_exceeded(void) { return false; }
 static inline void increment_wakelocks_number(void) {}
+#ifdef CONFIG_PM_WAKELOCKS_GC
 static inline void decrement_wakelocks_number(void) {}
+#endif /* CONFIG_PM_WAKELOCKS_GC */
 #endif /* CONFIG_PM_WAKELOCKS_LIMIT */
 
 #ifdef CONFIG_PM_WAKELOCKS_GC

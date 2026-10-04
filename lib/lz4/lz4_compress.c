@@ -57,6 +57,7 @@ static FORCE_INLINE U32 LZ4_hash4(
 			>> ((MINMATCH * 8) - LZ4_HASHLOG));
 }
 
+#if LZ4_ARCH64
 static FORCE_INLINE U32 LZ4_hash5(
 	U64 sequence,
 	tableType_t const tableType)
@@ -75,6 +76,7 @@ static FORCE_INLINE U32 LZ4_hash5(
 	return (U32)(((sequence >> 24) * prime8bytes) >> (64 - hashLog));
 #endif
 }
+#endif
 
 static FORCE_INLINE U32 LZ4_hashPosition(
 	const void *p,

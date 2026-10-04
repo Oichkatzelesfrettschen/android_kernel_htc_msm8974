@@ -490,6 +490,8 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case ACOUSTIC_GET_MID:
 		if (the_ops->get_mid)
 			mid = the_ops->get_mid();
+		else
+			mid = "Generic";
 
 		D("get mid: %s\n", mid);
 		if (copy_to_user((void *)arg, mid, strlen(mid))) {

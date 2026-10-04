@@ -1131,8 +1131,8 @@ static void insert_detect_work_func(struct work_struct *work)
 			switch_set_state(&hi->sdev_h2w, new_state);
 			hi->hs_35mm_type = HEADSET_ONEWIRE;
 			mutex_unlock(&hi->mutex_lock);
-		if (hs_mgr_notifier.key_int_enable)
-			hs_mgr_notifier.key_int_enable(1);
+			if (hs_mgr_notifier.key_int_enable)
+				hs_mgr_notifier.key_int_enable(1);
 			return;
 		} else {
 			hi->one_wire_mode = 0;

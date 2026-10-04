@@ -82,32 +82,6 @@ static inline int amap_remove_from_list(AU_INFO_T *au, struct slist_head *shead)
 	BUG_ON("Not reachable");
 }
 
-/* Full-linear serach => Find AU with max. number of fclu */
-static inline AU_INFO_T *amap_find_hot_au_largest(struct slist_head *shead)
-{
-	struct slist_head *iter;
-	uint16_t max_fclu = 0;
-	AU_INFO_T *entry, *ret = NULL;
-
-	ASSERT(shead->head == shead);	/* Singly-list condition */
-	ASSERT(shead->next != shead);
-
-	iter = shead->next;
-
-	while (iter) {
-		entry = list_entry(iter, AU_INFO_T, shead);
-
-		if (entry->free_clusters > max_fclu) {
-			max_fclu = entry->free_clusters;
-			ret = entry;
-		}
-
-		iter = iter->next;
-	}
-
-	return ret;
-}
-
 /* Find partially used AU with max. number of fclu.
  * If there is no partial AU available, pick a clean one
  */
@@ -590,46 +564,6 @@ void amap_destroy(struct super_block *sb)
 }
 
 
-/*
- * Check status of FS
- * and change destination if needed to disable AU-aligned alloc.
- * (from ALLOC_COLD_ALIGNED to ALLOC_COLD_SEQ)
- */
-static inline int amap_update_dest(AMAP_T *amap, int ori_dest)
-{
-	FS_INFO_T *fsi = &(SDFAT_SB(amap->sb)->fsi);
-	int n_partial_au, n_partial_freeclus;
-
-	if (ori_dest != ALLOC_COLD_ALIGNED)
-		return ori_dest;
-
-	/* # of partial AUs and # of clusters in those AUs */
-	n_partial_au = amap->n_au - amap->n_clean_au - amap->n_full_au;
-	n_partial_freeclus = fsi->num_clusters - fsi->used_clusters -
-				amap->clusters_per_au * amap->n_clean_au;
-
-	/* Status of AUs : Full / Partial / Clean
-	 * If there are many partial (and badly fragmented) AUs,
-	 * the throughput will decrease extremly.
-	 *
-	 * The follow code will treat those worst cases.
-	 */
-
-	/* XXX: AMAP heuristics */
-	if ((amap->n_clean_au * 50 <= amap->n_au) &&
-		(n_partial_freeclus*2) < (n_partial_au*amap->clusters_per_au)) {
-		/* If clean AUs are fewer than 2% of n_au (80 AUs per 16GB)
-		 * and fragment ratio is more than 2 (AVG free_clusters=half AU)
-		 *
-		 * disable clean-first allocation
-		 * enable VFAT-like sequential allocation
-		 */
-		return ALLOC_COLD_SEQ;
-	}
-
-	return ori_dest;
-}
-
 
 #define PACKING_SOFTLIMIT      (amap->option.packing_ratio)
 #define PACKING_HARDLIMIT      (amap->option.packing_ratio * 4)
@@ -807,9 +741,6 @@ retry:
 		 * ALLOC_COLD_PACKING: Packing AU first (usually for defrag)
 		 * ALLOC_COLD_SEQ    : Sequential AU allocation (VFAT-like)
 		 */
-
-		/* Experimental: Modify allocation destination if needed (ALIGNED => SEQ) */
-		// dest = amap_update_dest(amap, dest);
 
 		if ((dest == ALLOC_COLD_SEQ) && old_au) {
 			int i_au = old_au->idx + 1;

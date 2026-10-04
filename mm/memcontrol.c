@@ -2072,6 +2072,7 @@ void mem_cgroup_update_page_stat(struct page *page,
 	struct mem_cgroup *memcg;
 	struct page_cgroup *pc = lookup_page_cgroup(page);
 	unsigned long uninitialized_var(flags);
+	enum mem_cgroup_stat_index stat;
 
 	if (mem_cgroup_disabled())
 		return;
@@ -2082,13 +2083,13 @@ void mem_cgroup_update_page_stat(struct page *page,
 
 	switch (idx) {
 	case MEMCG_NR_FILE_MAPPED:
-		idx = MEM_CGROUP_STAT_FILE_MAPPED;
+		stat = MEM_CGROUP_STAT_FILE_MAPPED;
 		break;
 	default:
 		BUG();
 	}
 
-	this_cpu_add(memcg->stat->count[idx], val);
+	this_cpu_add(memcg->stat->count[stat], val);
 }
 
 /*
