@@ -51,6 +51,16 @@ static const unsigned int tacc_mant[] = {
 	35,	40,	45,	50,	55,	60,	70,	80,
 };
 
+/* Allocation unit size in 512-byte sectors, indexed by SSR AU_SIZE. */
+static const unsigned int sd_au_size[] = {
+	0,			(16 << 10) / 512,	(32 << 10) / 512,
+	(64 << 10) / 512,	(128 << 10) / 512,	(256 << 10) / 512,
+	(512 << 10) / 512,	(1 << 20) / 512,	(2 << 20) / 512,
+	(4 << 20) / 512,	(8 << 20) / 512,	(12 << 20) / 512,
+	(16 << 20) / 512,	(24 << 20) / 512,	(32 << 20) / 512,
+	(64 << 20) / 512,
+};
+
 #define UNSTUFF_BITS(resp,start,size)					\
 	({								\
 		const int __size = size;				\
@@ -251,18 +261,20 @@ static int mmc_read_ssr(struct mmc_card *card)
 	 * bitfield positions accordingly.
 	 */
 	au = UNSTUFF_BITS(ssr, 428 - 384, 4);
-	if (au > 0 || au <= 9) {
-		card->ssr.au = 1 << (au + 4);
-		es = UNSTUFF_BITS(ssr, 408 - 384, 16);
-		et = UNSTUFF_BITS(ssr, 402 - 384, 6);
-		eo = UNSTUFF_BITS(ssr, 400 - 384, 2);
-		if (es && et) {
-			card->ssr.erase_timeout = (et * 1000) / es;
-			card->ssr.erase_offset = eo * 1000;
+	if (au) {
+		if (au <= 9 || card->scr.sda_spec3) {
+			card->ssr.au = sd_au_size[au];
+			es = UNSTUFF_BITS(ssr, 408 - 384, 16);
+			et = UNSTUFF_BITS(ssr, 402 - 384, 6);
+			if (es && et) {
+				eo = UNSTUFF_BITS(ssr, 400 - 384, 2);
+				card->ssr.erase_timeout = (et * 1000) / es;
+				card->ssr.erase_offset = eo * 1000;
+			}
+		} else {
+			pr_warning("%s: SD Status: Invalid Allocation Unit "
+				"size.\n", mmc_hostname(card->host));
 		}
-	} else {
-		pr_warning("%s: SD Status: Invalid Allocation Unit "
-			"size.\n", mmc_hostname(card->host));
 	}
 out:
 	kfree(ssr);
