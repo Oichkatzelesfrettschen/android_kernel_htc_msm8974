@@ -411,7 +411,7 @@ static int curr_con_mode;
   --------------------------------------------------------------------------*/
 static void hdd_vos_trace_enable(VOS_MODULE_ID moduleId, v_U32_t bitmask)
 {
-   wpt_tracelevel level;
+   VOS_TRACE_LEVEL level;
 
    /* if the bitmask is the default value, then a bitmask was not
       specified in cfg.ini, so leave the logging level alone (it

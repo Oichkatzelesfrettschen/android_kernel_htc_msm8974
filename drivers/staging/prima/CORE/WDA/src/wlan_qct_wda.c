@@ -178,7 +178,7 @@ static VOS_STATUS WDA_ProcessUpdateScanParams(tWDA_CbContext *pWDA, tSirUpdateSc
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
 VOS_STATUS WDA_ProcessRoamScanOffloadReq(tWDA_CbContext *pWDA,tSirRoamOffloadScanReq *pRoamOffloadScanReqParams);
 void WDA_RoamOffloadScanReqCallback(WDI_Status status, void* pUserData);
-void WDA_ConvertSirAuthToWDIAuth(WDI_AuthType *AuthType, v_U8_t csrAuthType);
+void WDA_ConvertSirAuthToWDIAuth(wpt_uint32 *AuthType, v_U8_t csrAuthType);
 void WDA_ConvertSirEncToWDIEnc(WDI_EdType *EncrType, v_U8_t csrEncrType);
 #endif
 #ifdef WLAN_FEATURE_PACKET_FILTERING
@@ -16405,7 +16405,7 @@ VOS_STATUS WDA_ProcessSetPrefNetworkReq(tWDA_CbContext *pWDA,
 
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
 
-void WDA_ConvertSirAuthToWDIAuth(WDI_AuthType *AuthType, v_U8_t csrAuthType)
+void WDA_ConvertSirAuthToWDIAuth(wpt_uint32 *AuthType, v_U8_t csrAuthType)
 {
    /*Convert the CSR Auth types to WDI Auth types */
    switch (csrAuthType)

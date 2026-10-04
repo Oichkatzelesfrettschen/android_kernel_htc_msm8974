@@ -193,7 +193,7 @@ WPAL_TIMER_STATE wpalTimerGetCurStatus(wpt_timer * pTimer)
       WPAL_TRACE( eWLAN_MODULE_PAL, eWLAN_PAL_TRACE_LEVEL_ERROR,
                   " %s Wrong param pTimer(%p)",
                   __func__, pTimer );
-      return eWLAN_PAL_STATUS_E_INVAL;
+      return VOS_TIMER_STATE_UNUSED;
    }
    return vos_timer_getCurrentState( &pTimer->timer.timerObj );
 }/*wpalTimerGetCurStatus*/

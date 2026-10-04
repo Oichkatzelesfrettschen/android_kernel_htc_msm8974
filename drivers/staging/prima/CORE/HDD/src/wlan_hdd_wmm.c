@@ -116,6 +116,26 @@ const v_U8_t hddLinuxUpToAcMap[8] = {
    HDD_LINUX_AC_VO
 };
 
+/*
+ * TSPEC direction in TL numbering. The TSPEC field has four values with
+ * both directions at 3 and a reserved value at 2, while TL has three
+ * values with both directions at 2.
+ */
+static WLANTL_TSDirType hdd_wmm_tl_ts_dir(sme_QosWmmDirType direction)
+{
+   switch (direction)
+   {
+   case SME_QOS_WMM_TS_DIR_UPLINK:
+      return WLANTL_TX_DIR;
+   case SME_QOS_WMM_TS_DIR_DOWNLINK:
+      return WLANTL_RX_DIR;
+   case SME_QOS_WMM_TS_DIR_RESV:
+   case SME_QOS_WMM_TS_DIR_BOTH:
+   default:
+      return WLANTL_BI_DIR;
+   }
+}
+
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
 /**
   @brief hdd_wmm_enable_tl_uapsd() - function which decides whether and
@@ -217,7 +237,7 @@ static void hdd_wmm_enable_tl_uapsd (hdd_wmm_qos_context_t* pQosContext)
                                     pAc->wmmAcTspecInfo.ts_info.up,
                                     service_interval,
                                     suspension_interval,
-                                    direction);
+                                    hdd_wmm_tl_ts_dir(direction));
 
    if ( !VOS_IS_STATUS_SUCCESS( status ) )
    {
@@ -323,7 +343,7 @@ static void hdd_wmm_disable_tl_uapsd (hdd_wmm_qos_context_t* pQosContext)
                    pAc->wmmAcTspecInfo.ts_info.up,
                    service_interval,
                    suspension_interval,
-                   pAc->wmmAcTspecInfo.ts_info.direction);
+                   hdd_wmm_tl_ts_dir(pAc->wmmAcTspecInfo.ts_info.direction));
 
          if ( !VOS_IS_STATUS_SUCCESS( status ) )
          {
