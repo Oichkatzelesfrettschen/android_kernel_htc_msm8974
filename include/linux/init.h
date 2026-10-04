@@ -3,6 +3,9 @@
 
 #include <linux/compiler.h>
 #include <linux/types.h>
+#ifdef CONFIG_LTO_CLANG
+#include <linux/stringify.h>
+#endif
 
 /* These macros are used to mark some functions or 
  * initialized data (doesn't apply to uninitialized data)
@@ -175,9 +178,30 @@ extern bool initcall_debug;
  * can point at the same handler without causing duplicate-symbol build errors.
  */
 
+#ifdef CONFIG_LTO_CLANG
+/*
+ * LTO emits initcalls in an order of its own choosing, so each one gets a
+ * section of its own, named after the object (__KBUILD_MODNAME), the
+ * position in the translation unit (__COUNTER__) and the line. The vmlinux
+ * LTO link merges these sections back into ".initcall<level>.init" in
+ * object link order and source order, using the linker script that
+ * scripts/generate_initcall_order.pl writes.
+ */
+#define ____initcall_name(mod,counter,line,fn,id) \
+	__initcall__##mod##__##counter##_##line##_##fn##id
+#define ___initcall_name(mod,counter,line,fn,id) \
+	____initcall_name(mod,counter,line,fn,id)
+#define ___define_initcall_at(section,level,fn,id,counter,line) \
+	static initcall_t ___initcall_name(__KBUILD_MODNAME,counter,line,fn,id) \
+	__used __attribute__((__section__(section level ".init.." \
+	__stringify(___initcall_name(__KBUILD_MODNAME,counter,line,fn,id))))) = fn
+#define __define_initcall(level,fn,id) \
+	___define_initcall_at(".initcall",level,fn,id,__COUNTER__,__LINE__)
+#else
 #define __define_initcall(level,fn,id) \
 	static initcall_t __initcall_##fn##id __used \
 	__attribute__((__section__(".initcall" level ".init"))) = fn
+#endif
 
 /*
  * Early initcalls run before initializing SMP.
@@ -215,6 +239,13 @@ extern bool initcall_debug;
 #define __exitcall(fn) \
 	static exitcall_t __exitcall_##fn __exit_call = fn
 
+#ifdef CONFIG_LTO_CLANG
+#define console_initcall(fn) \
+	___define_initcall_at(".con_initcall","",fn,con,__COUNTER__,__LINE__)
+
+#define security_initcall(fn) \
+	___define_initcall_at(".security_initcall","",fn,sec,__COUNTER__,__LINE__)
+#else
 #define console_initcall(fn) \
 	static initcall_t __initcall_##fn \
 	__used __section(.con_initcall.init) = fn
@@ -222,6 +253,7 @@ extern bool initcall_debug;
 #define security_initcall(fn) \
 	static initcall_t __initcall_##fn \
 	__used __section(.security_initcall.init) = fn
+#endif
 
 struct obs_kernel_param {
 	const char *str;

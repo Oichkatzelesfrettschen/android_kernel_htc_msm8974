@@ -305,6 +305,8 @@ config ARCH_RANDOM
 
 source "init/Kconfig"
 
+source "arch/arm/Kconfig.lto"
+
 source "kernel/Kconfig.freezer"
 
 menu "System Type"

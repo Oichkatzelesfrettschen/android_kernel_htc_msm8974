@@ -127,6 +127,12 @@ endif
 
 ccflags-y := -fpic -fno-builtin -I$(obj) $(call cc-option,-fno-stack-protector)
 
+ifdef CONFIG_LTO_CLANG
+# The decompressor links on its own, outside the vmlinux LTO link, and its
+# GOT relocation (check_for_bad_syms) needs default symbol visibility.
+KBUILD_CFLAGS := $(filter-out $(CC_FLAGS_LTO),$(KBUILD_CFLAGS))
+endif
+
 # Supply kernel BSS size to the decompressor via a linker symbol.
 KBSS_SZ = $(shell echo $$(($$($(NM) $(obj)/../../../../vmlinux | \
 		sed -n -e 's/^\([^ ]*\) [A-Za-z] __bss_start$$/-0x\1/p' \
