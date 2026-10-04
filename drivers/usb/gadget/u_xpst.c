@@ -1056,10 +1056,6 @@ static ssize_t diag2arm9_write(struct file *fp, const char __user *buf,
 			DIAG_INFO("%s: driver->smd_data[MODEM_DATA].ch == NULL", __func__);
 			r = -EFAULT;
 			break;
-		} else if (ctxt->toARM9_buf == NULL) {
-			DIAG_INFO("%s: ctxt->toARM9_buf == NULL", __func__);
-			r = -EFAULT;
-			break;
 		}
 #endif
 
@@ -1264,7 +1260,7 @@ static ssize_t diag2arm9_read(struct file *fp, char __user *buf,
 	struct diag_context *ctxt = get_modem_ctxt();
 	struct usb_request *req;
 	int r = 0, xfer;
-	int ret;
+	int ret = 0;
 	DIAG_INFO("%s\n", __func__);
 	mutex_lock(&ctxt->diag2arm9_read_lock);
 

@@ -1392,7 +1392,7 @@ int hci_add_adv_entry(struct hci_dev *hdev,
 	if (!is_connectable_adv(ev->evt_type))
 		return -EINVAL;
 
-	if (ev->data && ev->length) {
+	if (ev->length) {
 		for (i = 0; (i + 2) < ev->length; i++)
 			if (ev->data[i+1] == 0x01) {
 				flags = ev->data[i+2];

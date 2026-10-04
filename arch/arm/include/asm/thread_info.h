@@ -29,6 +29,8 @@ struct exec_domain;
 
 typedef unsigned long mm_segment_t;
 
+register unsigned long current_stack_pointer asm ("sp");
+
 struct cpu_context_save {
 	__u32	r4;
 	__u32	r5;
@@ -93,8 +95,7 @@ static inline struct thread_info *current_thread_info(void) __attribute_const__;
 
 static inline struct thread_info *current_thread_info(void)
 {
-	register unsigned long sp asm ("sp");
-	return (struct thread_info *)(sp & ~(THREAD_SIZE - 1));
+	return (struct thread_info *)(current_stack_pointer & ~(THREAD_SIZE - 1));
 }
 
 #define thread_saved_pc(tsk)	\

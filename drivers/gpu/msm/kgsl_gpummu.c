@@ -392,6 +392,7 @@ kgsl_pt_map_set(struct kgsl_gpummu_pt *pt, uint32_t pte, uint32_t val)
 	baseptr[pte] = val;
 }
 
+#ifdef VERBOSE_DEBUG
 static inline uint32_t
 kgsl_pt_map_get(struct kgsl_gpummu_pt *pt, uint32_t pte)
 {
@@ -399,6 +400,7 @@ kgsl_pt_map_get(struct kgsl_gpummu_pt *pt, uint32_t pte)
 	BUG_ON(pte*sizeof(uint32_t) >= pt->base.size);
 	return baseptr[pte] & GSL_PT_PAGE_ADDR_MASK;
 }
+#endif
 
 static void kgsl_gpummu_pagefault(struct kgsl_mmu *mmu)
 {

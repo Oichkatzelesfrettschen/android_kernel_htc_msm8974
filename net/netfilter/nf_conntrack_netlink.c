@@ -835,17 +835,21 @@ static const struct nla_policy tuple_nla_policy[CTA_TUPLE_MAX+1] = {
 	[CTA_TUPLE_PROTO]	= { .type = NLA_NESTED },
 };
 
+/*
+ * Parse the nested CTA_TUPLE_* attribute attr into tuple; dir is the
+ * conntrack direction the tuple describes.
+ */
 static int
-ctnetlink_parse_tuple(const struct nlattr * const cda[],
-		      struct nf_conntrack_tuple *tuple,
-		      enum ctattr_type type, u_int8_t l3num)
+ctnetlink_parse_tuple_attr(const struct nlattr *attr,
+			   struct nf_conntrack_tuple *tuple,
+			   u_int8_t l3num, enum ip_conntrack_dir dir)
 {
 	struct nlattr *tb[CTA_TUPLE_MAX+1];
 	int err;
 
 	memset(tuple, 0, sizeof(*tuple));
 
-	nla_parse_nested(tb, CTA_TUPLE_MAX, cda[type], tuple_nla_policy);
+	nla_parse_nested(tb, CTA_TUPLE_MAX, attr, tuple_nla_policy);
 
 	if (!tb[CTA_TUPLE_IP])
 		return -EINVAL;
@@ -865,13 +869,30 @@ ctnetlink_parse_tuple(const struct nlattr * const cda[],
 	if (err < 0)
 		return err;
 
-	/* orig and expect tuples get DIR_ORIGINAL */
-	if (type == CTA_TUPLE_REPLY)
-		tuple->dst.dir = IP_CT_DIR_REPLY;
-	else
-		tuple->dst.dir = IP_CT_DIR_ORIGINAL;
+	tuple->dst.dir = dir;
 
 	return 0;
+}
+
+/* Parse a conntrack tuple; only the reply tuple gets DIR_REPLY. */
+static int
+ctnetlink_parse_tuple(const struct nlattr * const cda[],
+		      struct nf_conntrack_tuple *tuple,
+		      enum ctattr_type type, u_int8_t l3num)
+{
+	return ctnetlink_parse_tuple_attr(cda[type], tuple, l3num,
+					  type == CTA_TUPLE_REPLY ?
+					  IP_CT_DIR_REPLY : IP_CT_DIR_ORIGINAL);
+}
+
+/* Parse an expectation tuple; expectation tuples get DIR_ORIGINAL. */
+static int
+ctnetlink_parse_exp_tuple(const struct nlattr * const cda[],
+			  struct nf_conntrack_tuple *tuple,
+			  enum ctattr_expect type, u_int8_t l3num)
+{
+	return ctnetlink_parse_tuple_attr(cda[type], tuple, l3num,
+					  IP_CT_DIR_ORIGINAL);
 }
 
 static int
@@ -1786,7 +1807,7 @@ static struct nfq_ct_hook ctnetlink_nfqueue_hook = {
 static inline int
 ctnetlink_exp_dump_tuple(struct sk_buff *skb,
 			 const struct nf_conntrack_tuple *tuple,
-			 enum ctattr_expect type)
+			 u32 type)
 {
 	struct nlattr *nest_parms;
 
@@ -2095,9 +2116,11 @@ ctnetlink_get_expect(struct sock *ctnl, struct sk_buff *skb,
 		return err;
 
 	if (cda[CTA_EXPECT_TUPLE])
-		err = ctnetlink_parse_tuple(cda, &tuple, CTA_EXPECT_TUPLE, u3);
+		err = ctnetlink_parse_exp_tuple(cda, &tuple,
+						CTA_EXPECT_TUPLE, u3);
 	else if (cda[CTA_EXPECT_MASTER])
-		err = ctnetlink_parse_tuple(cda, &tuple, CTA_EXPECT_MASTER, u3);
+		err = ctnetlink_parse_exp_tuple(cda, &tuple,
+						CTA_EXPECT_MASTER, u3);
 	else
 		return -EINVAL;
 
@@ -2165,7 +2188,8 @@ ctnetlink_del_expect(struct sock *ctnl, struct sk_buff *skb,
 		if (err < 0)
 			return err;
 
-		err = ctnetlink_parse_tuple(cda, &tuple, CTA_EXPECT_TUPLE, u3);
+		err = ctnetlink_parse_exp_tuple(cda, &tuple,
+						CTA_EXPECT_TUPLE, u3);
 		if (err < 0)
 			return err;
 
@@ -2269,8 +2293,8 @@ ctnetlink_parse_expect_nat(const struct nlattr *attr,
 	if (!tb[CTA_EXPECT_NAT_DIR] || !tb[CTA_EXPECT_NAT_TUPLE])
 		return -EINVAL;
 
-	err = ctnetlink_parse_tuple((const struct nlattr * const *)tb,
-					&nat_tuple, CTA_EXPECT_NAT_TUPLE, u3);
+	err = ctnetlink_parse_tuple_attr(tb[CTA_EXPECT_NAT_TUPLE], &nat_tuple,
+					 u3, IP_CT_DIR_ORIGINAL);
 	if (err < 0)
 		return err;
 
@@ -2300,13 +2324,14 @@ ctnetlink_create_expect(struct net *net, u16 zone,
 	int err = 0;
 
 	/* caller guarantees that those three CTA_EXPECT_* exist */
-	err = ctnetlink_parse_tuple(cda, &tuple, CTA_EXPECT_TUPLE, u3);
+	err = ctnetlink_parse_exp_tuple(cda, &tuple, CTA_EXPECT_TUPLE, u3);
 	if (err < 0)
 		return err;
-	err = ctnetlink_parse_tuple(cda, &mask, CTA_EXPECT_MASK, u3);
+	err = ctnetlink_parse_exp_tuple(cda, &mask, CTA_EXPECT_MASK, u3);
 	if (err < 0)
 		return err;
-	err = ctnetlink_parse_tuple(cda, &master_tuple, CTA_EXPECT_MASTER, u3);
+	err = ctnetlink_parse_exp_tuple(cda, &master_tuple,
+					CTA_EXPECT_MASTER, u3);
 	if (err < 0)
 		return err;
 
@@ -2431,7 +2456,7 @@ ctnetlink_new_expect(struct sock *ctnl, struct sk_buff *skb,
 	if (err < 0)
 		return err;
 
-	err = ctnetlink_parse_tuple(cda, &tuple, CTA_EXPECT_TUPLE, u3);
+	err = ctnetlink_parse_exp_tuple(cda, &tuple, CTA_EXPECT_TUPLE, u3);
 	if (err < 0)
 		return err;
 

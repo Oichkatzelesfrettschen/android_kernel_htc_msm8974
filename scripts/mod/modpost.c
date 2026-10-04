@@ -1513,12 +1513,28 @@ static int addend_386_rel(struct elf_info *elf, Elf_Shdr *sechdr, Elf_Rela *r)
 static int addend_arm_rel(struct elf_info *elf, Elf_Shdr *sechdr, Elf_Rela *r)
 {
 	unsigned int r_typ = ELF_R_TYPE(r->r_info);
+	Elf_Sym *sym = elf->symtab_start + ELF_R_SYM(r->r_info);
 
 	switch (r_typ) {
 	case R_ARM_ABS32:
-		/* From ARM ABI: (S + A) | T */
-		r->r_addend = (int)(long)
-		              (elf->symtab_start + ELF_R_SYM(r->r_info));
+		/*
+		 * From ARM ABI: (S + A) | T
+		 *
+		 * Symbol S is generally a section symbol (an alias for a
+		 * .data or .init.data variable) when the referencing object
+		 * has no external linkage, and this REL (not RELA) section
+		 * carries addend A in the 32-bit instruction word itself,
+		 * not in a separate ELF addend field. The old
+		 * (int)(long)(elf->symtab_start + ELF_R_SYM(...)) here
+		 * stored a symtab pointer in place of the real addend, so
+		 * every reference through a section symbol looked up as
+		 * "(unknown)". Reading the instruction and adding the
+		 * section symbol's own value (usually 0) recovers the real
+		 * offset, same as upstream torvalds/linux b7c63520f670
+		 * ("modpost: fix section mismatch message for R_ARM_ABS32").
+		 */
+		r->r_addend = TO_NATIVE(*reloc_location(elf, sechdr, r)) +
+			      sym->st_value;
 		break;
 	case R_ARM_PC24:
 	case R_ARM_CALL:

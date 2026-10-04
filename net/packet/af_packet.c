@@ -2057,6 +2057,9 @@ static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 		len = ((to_write > len_max) ? len_max : to_write);
 	}
 
+	if (unlikely(!skb->len))
+		return -EINVAL;
+
 	return tp_len;
 }
 
@@ -3697,7 +3700,7 @@ static int packet_set_ring(struct sock *sk, union tpacket_req_u *req_u,
 		 */
 			if (!tx_ring)
 				init_prb_bdqc(po, rb, pg_vec, req_u, tx_ring);
-				break;
+			break;
 		default:
 			break;
 		}

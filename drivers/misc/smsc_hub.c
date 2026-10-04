@@ -42,26 +42,6 @@ static struct hsic_hub *smsc_hub;
 static struct platform_driver smsc_hub_driver;
 
 /* APIs for setting/clearing bits and for reading/writing values */
-static inline int hsic_hub_get_u8(struct i2c_client *client, u8 reg)
-{
-	int ret;
-
-	ret = i2c_smbus_read_byte_data(client, reg);
-	if (ret < 0)
-		pr_err("%s:i2c_read8 failed\n", __func__);
-	return ret;
-}
-
-static inline int hsic_hub_get_u16(struct i2c_client *client, u8 reg)
-{
-	int ret;
-
-	ret = i2c_smbus_read_word_data(client, reg);
-	if (ret < 0)
-		pr_err("%s:i2c_read16 failed\n", __func__);
-	return ret;
-}
-
 static inline int hsic_hub_write_word_data(struct i2c_client *client, u8 reg,
 						u16 value)
 {
@@ -70,17 +50,6 @@ static inline int hsic_hub_write_word_data(struct i2c_client *client, u8 reg,
 	ret = i2c_smbus_write_word_data(client, reg, value);
 	if (ret)
 		pr_err("%s:i2c_write16 failed\n", __func__);
-	return ret;
-}
-
-static inline int hsic_hub_write_byte_data(struct i2c_client *client, u8 reg,
-						u8 value)
-{
-	int ret;
-
-	ret = i2c_smbus_write_byte_data(client, reg, value);
-	if (ret)
-		pr_err("%s:i2c_write_byte_data failed\n", __func__);
 	return ret;
 }
 

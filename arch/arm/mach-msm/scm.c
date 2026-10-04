@@ -563,7 +563,7 @@ EXPORT_SYMBOL(scm_get_version);
 int secure_read_simlock_mask(void)
 {
 	int ret;
-	u32 dummy;
+	u32 dummy = 0;
 
 	ret = scm_call(SCM_SVC_OEM, TZ_HTC_SVC_READ_SIMLOCK_MASK,
 			&dummy, sizeof(dummy), NULL, 0);
@@ -596,7 +596,7 @@ EXPORT_SYMBOL(secure_simlock_unlock);
 int secure_get_security_level(void)
 {
 	int ret;
-	u32 dummy;
+	u32 dummy = 0;
 
 	ret = scm_call(SCM_SVC_OEM, TZ_HTC_SVC_GET_SECURITY_LEVEL,
 			&dummy, sizeof(dummy), NULL, 0);
@@ -613,7 +613,7 @@ EXPORT_SYMBOL(secure_get_security_level);
 int secure_memprot(void)
 {
 	int ret;
-	u32 dummy;
+	u32 dummy = 0;
 
 	ret = scm_call(SCM_SVC_OEM, TZ_HTC_SVC_MEMPROT,
 			&dummy, sizeof(dummy), NULL, 0);

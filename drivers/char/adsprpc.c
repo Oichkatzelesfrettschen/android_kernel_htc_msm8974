@@ -65,12 +65,6 @@ static inline uint32_t buf_page_start(void *buf)
 	return start;
 }
 
-static inline uint32_t buf_page_offset(void *buf)
-{
-	uint32_t offset = (uint32_t) buf & (PAGE_SIZE - 1);
-	return offset;
-}
-
 static inline int buf_num_pages(void *buf, size_t len)
 {
 	uint32_t start = buf_page_start(buf) >> PAGE_SHIFT;

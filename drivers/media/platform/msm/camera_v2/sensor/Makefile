@@ -26,5 +26,5 @@ obj-$(CONFIG_IMX214_800M_FOV77) += imx214_800m_fov77.o
 obj-$(CONFIG_IMX214_800M_FOV87) += imx214_800m_fov87.o
 obj-$(CONFIG_S5K5E_ONELANE) += s5k5e_onelane.o
 obj-$(CONFIG_s5k5e) += s5k5e.o
-obj-$(CONFIG_OV2722) += ov2722.o ov2722-subcam.o
+obj-$(CONFIG_OV2722) += ov2722.o ov2722-subcam.o msm_duo_sync.o
 obj-$(CONFIG_IMX214) += imx214.o

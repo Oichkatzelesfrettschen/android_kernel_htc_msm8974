@@ -30,3 +30,19 @@ struct rq_data {
 extern spinlock_t rq_lock;
 extern struct rq_data rq_info;
 extern struct workqueue_struct *rq_wq;
+
+/*
+ * Reasons carried in rq_data.hotplug_disabled. The userspace hotplug daemon
+ * (mpdecision) reads rq-stats/hotplug_disable and leaves the CPU online mask
+ * alone while it reads 1; each holder sets and clears only its own bit.
+ */
+#define RQ_HOTPLUG_DISABLE_SUSPEND	(1U << 0)
+#define RQ_HOTPLUG_DISABLE_INPUT	(1U << 1)
+
+#ifdef CONFIG_MSM_RUN_QUEUE_STATS
+void rq_hotplug_disable_set(unsigned int reason, bool disable);
+#else
+static inline void rq_hotplug_disable_set(unsigned int reason, bool disable)
+{
+}
+#endif

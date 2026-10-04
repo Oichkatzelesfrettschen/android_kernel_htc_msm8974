@@ -591,12 +591,6 @@ static inline void zs_stat_dec(struct size_class *class,
 {
 }
 
-static inline unsigned long zs_stat_get(struct size_class *class,
-				enum zs_stat_type type)
-{
-	return 0;
-}
-
 static int __init zs_stat_init(void)
 {
 	return 0;

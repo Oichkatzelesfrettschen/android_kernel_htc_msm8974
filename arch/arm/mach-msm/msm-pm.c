@@ -790,29 +790,6 @@ void arch_idle(void)
 	return;
 }
 
-static inline void msm_pm_ftrace_lpm_enter(unsigned int cpu,
-		uint32_t latency, uint32_t sleep_us,
-		uint32_t wake_up,
-		enum msm_pm_sleep_mode mode)
-{
-	switch (mode) {
-	case MSM_PM_SLEEP_MODE_WAIT_FOR_INTERRUPT:
-		trace_msm_pm_enter_wfi(cpu, latency, sleep_us, wake_up);
-		break;
-	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_STANDALONE:
-		trace_msm_pm_enter_spc(cpu, latency, sleep_us, wake_up);
-		break;
-	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
-		trace_msm_pm_enter_pc(cpu, latency, sleep_us, wake_up);
-		break;
-	case MSM_PM_SLEEP_MODE_RETENTION:
-		trace_msm_pm_enter_ret(cpu, latency, sleep_us, wake_up);
-		break;
-	default:
-		break;
-	}
-}
-
 static inline void msm_pm_ftrace_lpm_exit(unsigned int cpu,
 		enum msm_pm_sleep_mode mode,
 		bool success)
@@ -1081,7 +1058,7 @@ static int msm_cpu_status_probe(struct platform_device *pdev)
 	return 0;
 };
 
-static struct of_device_id msm_slp_sts_match_tbl[] __initdata= {
+static struct of_device_id msm_slp_sts_match_tbl[] = {
 	{.compatible = "qcom,cpu-sleep-status"},
 	{},
 };
@@ -1095,7 +1072,7 @@ static struct platform_driver msm_cpu_status_driver = {
 	},
 };
 
-static struct of_device_id msm_snoc_clnt_match_tbl[] __initdata = {
+static struct of_device_id msm_snoc_clnt_match_tbl[] = {
 	{.compatible = "qcom,pm-snoc-client"},
 	{},
 };
@@ -1364,7 +1341,7 @@ static int msm_cpu_pm_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static struct of_device_id msm_cpu_pm_table[] __initdata = {
+static struct of_device_id msm_cpu_pm_table[] = {
 	{.compatible = "qcom,pm-8x60"},
 	{},
 };

@@ -660,7 +660,8 @@ static bool si_mhl_tx_parse_detailed_timing_descriptor(
 									*pMHL2_video_descriptor);
 			}
 
-			if (this_mode_doable |=qualify_pixel_clock_for_mhl((void*)mhl_edid_3d_data,pixel_clock_frequency,16)) {
+			this_mode_doable |= qualify_pixel_clock_for_mhl((void*)mhl_edid_3d_data,pixel_clock_frequency,16);
+			if (this_mode_doable) {
 				display_timing_enumeration_callback(mhl_edid_3d_data, columns,
 									rows, 16, vertical_refresh_rate_in_milliHz,
 									*pMHL2_video_descriptor);
@@ -2231,6 +2232,10 @@ uint8_t i;
 
 								MHL_TX_EDID_INFO(mhl_edid_3d_data->dev_context,
 										"EDID -> Short Descriptor Colorimetry Block\n");
+								break;
+
+							default:
+								/* Other extended tags carry no data this parser stores. */
 								break;
 						}
 					}

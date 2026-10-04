@@ -53,7 +53,8 @@ struct dma_map_ops {
 	int is_phys;
 };
 
-#define DMA_BIT_MASK(n)	(((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
+/* Low n bits set, 1 <= n <= 64; the shift count never reaches 64. */
+#define DMA_BIT_MASK(n)	(~0ULL >> (64 - (n)))
 
 #define DMA_MASK_NONE	0x0ULL
 

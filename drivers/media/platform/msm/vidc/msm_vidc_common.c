@@ -838,6 +838,15 @@ static void handle_session_flush(enum command_response cmd, void *data)
 	int rc;
 	if (response) {
 		inst = (struct msm_vidc_inst *)response->session_id;
+		if (response->status) {
+			dprintk(VIDC_ERR,
+				"Flush failed for inst %pK: error %#x; marking session invalid\n",
+				inst, response->status);
+			change_inst_state(inst, MSM_VIDC_CORE_INVALID);
+			msm_vidc_queue_v4l2_event(inst,
+					V4L2_EVENT_MSM_VIDC_SYS_ERROR);
+			return;
+		}
 		if (msm_comm_get_stream_output_mode(inst) ==
 			HAL_VIDEO_DECODER_SECONDARY) {
 			validate_output_buffers(inst);
@@ -3170,6 +3179,23 @@ int msm_comm_flush(struct msm_vidc_inst *inst, u32 flags)
 		dprintk(VIDC_ERR,
 				"Core %pK and inst %pK are in bad state\n",
 					core, inst);
+		msm_comm_flush_in_invalid_state(inst);
+		return 0;
+	}
+
+	/*
+	 * The Venus firmware accepts a flush only for a session it has
+	 * started. When no input buffer is ever queued the OUTPUT port is
+	 * never streamed on (venc_empty_buf defers VIDIOC_STREAMON to the
+	 * first ETB), so the HFI START never issues and the session stays
+	 * below MSM_VIDC_START_DONE; HAL_FLUSH_ALL then returns
+	 * HFI_ERR_SESSION_INCORRECT_STATE_OPERATION. Drain the queued buffers
+	 * locally and skip the firmware flush.
+	 */
+	if (inst->state < MSM_VIDC_START_DONE) {
+		dprintk(VIDC_WARN,
+			"Flush before session start (state %#x); draining local buffers only\n",
+			inst->state);
 		msm_comm_flush_in_invalid_state(inst);
 		return 0;
 	}

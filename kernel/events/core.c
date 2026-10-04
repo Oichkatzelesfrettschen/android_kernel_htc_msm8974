@@ -570,11 +570,6 @@ static inline int is_cgroup_event(struct perf_event *event)
 	return 0;
 }
 
-static inline u64 perf_cgroup_event_cgrp_time(struct perf_event *event)
-{
-	return 0;
-}
-
 static inline void update_cgrp_time_from_event(struct perf_event *event)
 {
 }
@@ -1316,24 +1311,36 @@ static int __perf_remove_from_context(void *info)
 }
 
 #ifdef CONFIG_SMP
-static void perf_retry_remove(struct perf_event *event)
+/*
+ * A per-CPU event of a PMU with events_across_hotplug stays in its CPU's
+ * context while that CPU is offline, and only that CPU may run the PMU's del
+ * callback for it. Bring the CPU up and remove the event there. The hotplug
+ * read lock holds the CPU online from the online check in
+ * smp_call_function_single() to the end of the removal; a cpu_down() that
+ * lands between cpu_up() and that lock makes the call return -ENXIO, and the
+ * loop brings the CPU up again. cpu_up() returns -EINVAL for a CPU that is
+ * already online, which the event's CPU was when the event was opened.
+ */
+static void __ref perf_retry_remove(struct remove_event *rep)
 {
-	int up_ret;
-	/*
-	 * CPU was offline. Bring it online so we can
-	 * gracefully exit a perf context.
-	 */
-	up_ret = cpu_up(event->cpu);
-	if (!up_ret)
-		/* Try the remove call once again. */
-		cpu_function_call(event->cpu, __perf_remove_from_context,
-				  event);
-	else
-		pr_err("Failed to bring up CPU: %d, ret: %d\n",
-		       event->cpu, up_ret);
+	int cpu = rep->event->cpu;
+	int up_ret, ret;
+
+	do {
+		up_ret = cpu_up(cpu);
+		if (up_ret && (up_ret != -EINVAL || !cpu_present(cpu))) {
+			pr_err("Failed to bring up CPU: %d, ret: %d\n",
+			       cpu, up_ret);
+			return;
+		}
+
+		get_online_cpus();
+		ret = cpu_function_call(cpu, __perf_remove_from_context, rep);
+		put_online_cpus();
+	} while (ret == -ENXIO);
 }
 #else
-static void perf_retry_remove(struct perf_event *event)
+static void perf_retry_remove(struct remove_event *rep)
 {
 }
 #endif
@@ -1369,7 +1376,7 @@ static void __ref perf_remove_from_context(struct perf_event *event, bool detach
 		 */
 		ret = cpu_function_call(event->cpu, __perf_remove_from_context, &re);
 		if (ret == -ENXIO)
-			perf_retry_remove(event);
+			perf_retry_remove(&re);
 		return;
 	}
 
@@ -5182,9 +5189,6 @@ struct swevent_htable {
 
 	/* Recursion avoidance in each contexts */
 	int				recursion[PERF_NR_CONTEXTS];
-
-	/* Keeps track of cpu being initialized/exited */
-	bool				online;
 };
 
 static DEFINE_PER_CPU(struct swevent_htable, swevent_htable);
@@ -5432,14 +5436,8 @@ static int perf_swevent_add(struct perf_event *event, int flags)
 	hwc->state = !(flags & PERF_EF_START);
 
 	head = find_swevent_head(swhash, event);
-	if (!head) {
-		/*
-		 * We can race with cpu hotplug code. Do not
-		 * WARN if the cpu just got unplugged.
-		 */
-		WARN_ON_ONCE(swhash->online);
+	if (WARN_ON_ONCE(!head))
 		return -EINVAL;
-	}
 
 	hlist_add_head_rcu(&event->hlist_entry, head);
 
@@ -7831,8 +7829,7 @@ static void __cpuinit perf_event_init_cpu(int cpu)
 	struct swevent_htable *swhash = &per_cpu(swevent_htable, cpu);
 
 	mutex_lock(&swhash->hlist_mutex);
-	swhash->online = true;
-	if (swhash->hlist_refcount > 0) {
+	if (swhash->hlist_refcount > 0 && !swevent_hlist_deref(swhash)) {
 		struct swevent_hlist *hlist;
 
 		hlist = kzalloc_node(sizeof(*hlist), GFP_KERNEL, cpu_to_node(cpu));
@@ -7893,14 +7890,7 @@ static void perf_event_exit_cpu_context(int cpu)
 
 static void perf_event_exit_cpu(int cpu)
 {
-	struct swevent_htable *swhash = &per_cpu(swevent_htable, cpu);
-
 	perf_event_exit_cpu_context(cpu);
-
-	mutex_lock(&swhash->hlist_mutex);
-	swhash->online = false;
-	swevent_hlist_release(swhash);
-	mutex_unlock(&swhash->hlist_mutex);
 }
 #else
 static inline void perf_event_exit_cpu(int cpu) { }

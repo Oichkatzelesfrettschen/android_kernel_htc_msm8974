@@ -44,6 +44,23 @@ static unsigned int _context_cmdbatch_burst = 5;
 static unsigned int _fault_throttle_time = 3000;
 static unsigned int _fault_throttle_burst = 3;
 
+/*
+ * A detach-timeout fault (ADRENO_CTX_DETATCH_TIMEOUT_FAULT) names no
+ * guilty command, since the CP cannot preempt the ring and the oldest
+ * command may belong to a healthy context; it resets and replays
+ * unconditionally instead of going through the per-context GFT
+ * throttle above. That throttle exists precisely to stop an
+ * unbounded reset loop, so track detach-timeout-only faults across
+ * the whole device the same way: more than _detach_fault_throttle_burst
+ * within _detach_fault_throttle_time disables FT for the oldest
+ * in-flight command and lets the existing invalidate-on-disable path
+ * below stop the loop, instead of resetting forever.
+ */
+static unsigned int _detach_fault_throttle_time = 3000;
+static unsigned int _detach_fault_throttle_burst = 3;
+static unsigned long _detach_fault_time;
+static unsigned int _detach_fault_count;
+
 /* Number of command batches inflight in the ringbuffer at any time */
 static unsigned int _dispatcher_inflight = 15;
 
@@ -1310,8 +1327,26 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 			mark_guilty_context(device, context->id);
 		}
 
-		if (!(fault & ~ADRENO_CTX_DETATCH_TIMEOUT_FAULT))
-			goto replay;
+		if (!(fault & ~ADRENO_CTX_DETATCH_TIMEOUT_FAULT)) {
+			if (time_after(jiffies, _detach_fault_time +
+					msecs_to_jiffies(
+						_detach_fault_throttle_time))) {
+				_detach_fault_time = jiffies;
+				_detach_fault_count = 1;
+			} else {
+				_detach_fault_count++;
+			}
+
+			if (_detach_fault_count <=
+					_detach_fault_throttle_burst)
+				goto replay;
+
+			pr_fault(device, cmdbatch,
+				"gpu detach-fault threshold exceeded %d faults in %d msecs\n",
+				_detach_fault_throttle_burst,
+				_detach_fault_throttle_time);
+			set_bit(KGSL_FT_DISABLE, &cmdbatch->fault_policy);
+		}
 	}
 
 	/*
@@ -1543,13 +1578,6 @@ replay:
 	kfree(replay);
 
 	return 1;
-}
-
-static inline int cmdbatch_consumed(struct kgsl_cmdbatch *cmdbatch,
-		unsigned int consumed, unsigned int retired)
-{
-	return ((timestamp_cmp(cmdbatch->timestamp, consumed) >= 0) &&
-		(timestamp_cmp(retired, cmdbatch->timestamp) < 0));
 }
 
 static void _print_recovery(struct kgsl_device *device,

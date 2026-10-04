@@ -231,7 +231,7 @@ struct ion_heap *ion_cma_heap_create(struct ion_platform_heap *data)
 	/* set device as private heaps data, later it will be
 	 * used to make the link with reserved CMA memory */
 	heap->priv = data->priv;
-	heap->type = ION_HEAP_TYPE_DMA;
+	heap->type = data->type;
 	cma_heap_has_outer_cache = data->has_outer_cache;
 	return heap;
 }

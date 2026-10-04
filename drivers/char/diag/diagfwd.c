@@ -372,7 +372,7 @@ static int check_bufsize_for_encoding(struct diag_smd_info *smd_info, void *buf,
 	return buf_size;
 }
 
-void diag_ws_on_notify()
+void diag_ws_on_notify(void)
 {
 	/*
 	 * Do not deal with reference count here as there can be
@@ -398,7 +398,7 @@ void diag_ws_on_read(int pkt_len)
 	spin_unlock_irqrestore(&driver->ws_lock, flags);
 }
 
-void diag_ws_on_copy()
+void diag_ws_on_copy(void)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&driver->ws_lock, flags);
@@ -406,7 +406,7 @@ void diag_ws_on_copy()
 	spin_unlock_irqrestore(&driver->ws_lock, flags);
 }
 
-void diag_ws_on_copy_complete()
+void diag_ws_on_copy_complete(void)
 {
 	unsigned long flags;
 	spin_lock_irqsave(&driver->ws_lock, flags);
@@ -419,7 +419,7 @@ void diag_ws_on_copy_complete()
 	spin_unlock_irqrestore(&driver->ws_lock, flags);
 }
 
-void diag_ws_reset()
+void diag_ws_reset(void)
 {
 	unsigned long flags;
 
@@ -1374,7 +1374,7 @@ int diag_process_stm_cmd(unsigned char *buf, unsigned char *dest_buf)
 	return STM_RSP_NUM_BYTES;
 }
 
-int diag_apps_responds()
+int diag_apps_responds(void)
 {
 	if (chk_apps_only()) {
 		if (driver->smd_data[MODEM_DATA].ch &&

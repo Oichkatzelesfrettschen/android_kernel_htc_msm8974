@@ -254,21 +254,6 @@ static inline unsigned long __sdfat_init_name_hash(const struct dentry *unused)
 #endif
 
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
-       /* EMPTY */
-#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 21) */
-static inline void inode_lock(struct inode *inode)
-{
-	       mutex_lock(&inode->i_mutex);
-}
-
-static inline void inode_unlock(struct inode *inode)
-{
-	       mutex_unlock(&inode->i_mutex);
-}
-#endif
-
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
 static inline int sdfat_remount_syncfs(struct super_block *sb)
 {
@@ -297,10 +282,12 @@ static inline void truncate_inode_pages_final(struct address_space *mapping)
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#ifdef CONFIG_SDFAT_TRACE_IO
 static inline sector_t __sdfat_bio_sector(struct bio *bio)
 {
 	return bio->bi_iter.bi_sector;
 }
+#endif
 
 static inline void __sdfat_set_bio_iterate(struct bio *bio, sector_t sector,
 		unsigned int size, unsigned int idx, unsigned int done)
@@ -433,10 +420,12 @@ out_unlocked:
 	return err;
 }
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0) */
+#ifdef CONFIG_SDFAT_TRACE_IO
 static inline sector_t __sdfat_bio_sector(struct bio *bio)
 {
 	return bio->bi_sector;
 }
+#endif
 
 static inline void __sdfat_set_bio_iterate(struct bio *bio, sector_t sector,
 		unsigned int size, unsigned int idx, unsigned int done)
@@ -1517,6 +1506,20 @@ static const struct dentry_operations sdfat_ci_dentry_ops = {
 };
 
 #ifdef	CONFIG_SDFAT_DFR
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
+       /* EMPTY */
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 21) */
+static inline void inode_lock(struct inode *inode)
+{
+	       mutex_lock(&inode->i_mutex);
+}
+
+static inline void inode_unlock(struct inode *inode)
+{
+	       mutex_unlock(&inode->i_mutex);
+}
+#endif
+
 /*----------------------------------------------------------------------*/
 /*  Defragmentation related                                             */
 /*----------------------------------------------------------------------*/

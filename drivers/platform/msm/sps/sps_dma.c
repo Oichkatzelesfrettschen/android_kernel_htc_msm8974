@@ -522,9 +522,20 @@ int sps_alloc_dma_chan(const struct sps_alloc_dma_chan *alloc,
 			thresh = BAM_DMA_THRESH_64;
 	}
 
-	weight = alloc->priority;
-
-	if ((u32)alloc->priority > (u32)BAM_DMA_WEIGHT_HIGH) {
+	switch (alloc->priority) {
+	case SPS_DMA_PRI_DEFAULT:
+		weight = BAM_DMA_WEIGHT_DEFAULT;
+		break;
+	case SPS_DMA_PRI_LOW:
+		weight = BAM_DMA_WEIGHT_LOW;
+		break;
+	case SPS_DMA_PRI_MED:
+		weight = BAM_DMA_WEIGHT_MED;
+		break;
+	case SPS_DMA_PRI_HIGH:
+		weight = BAM_DMA_WEIGHT_HIGH;
+		break;
+	default:
 		SPS_ERR("sps:BAM-DMA: invalid priority: %x", alloc->priority);
 		return SPS_ERROR;
 	}

@@ -35,16 +35,6 @@
 # include <linux/efi.h>
 #endif
 
-static inline unsigned long size_inside_page(unsigned long start,
-					     unsigned long size)
-{
-	unsigned long sz;
-
-	sz = PAGE_SIZE - (start & (PAGE_SIZE - 1));
-
-	return min(sz, size);
-}
-
 #ifndef ARCH_HAS_VALID_PHYS_ADDR_RANGE
 static inline int valid_phys_addr_range(unsigned long addr, size_t count)
 {
@@ -58,6 +48,16 @@ static inline int valid_mmap_phys_addr_range(unsigned long pfn, size_t size)
 #endif
 
 #if defined(CONFIG_DEVMEM) || defined(CONFIG_DEVKMEM)
+static inline unsigned long size_inside_page(unsigned long start,
+					     unsigned long size)
+{
+	unsigned long sz;
+
+	sz = PAGE_SIZE - (start & (PAGE_SIZE - 1));
+
+	return min(sz, size);
+}
+
 #ifdef CONFIG_STRICT_DEVMEM
 static inline int page_is_allowed(unsigned long pfn)
 {

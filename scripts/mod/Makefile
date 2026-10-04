@@ -1,12 +1,16 @@
 hostprogs-y	:= modpost mk_elfconfig
 always		:= $(hostprogs-y) empty.o
 
+# mk_elfconfig reads the ELF header of empty.o.
+CFLAGS_empty.o := $(DISABLE_LTO)
+
 modpost-objs	:= modpost.o file2alias.o sumversion.o
 
 devicetable-offsets-file := devicetable-offsets.h
 
 define sed-y
-	"/^->/{s:->#\(.*\):/* \1 */:; \
+	"s:^[[:space:]]*\.ascii[[:space:]]*\"\(.*\)\".*:\1:; \
+	/^->/{s:->#\(.*\):/* \1 */:; \
 	s:^->\([^ ]*\) [\$$#]*\([-0-9]*\) \(.*\):#define \1 \2 /* \3 */:; \
 	s:^->\([^ ]*\) [\$$#]*\([^ ]*\) \(.*\):#define \1 \2 /* \3 */:; \
 	s:->::; p;}"

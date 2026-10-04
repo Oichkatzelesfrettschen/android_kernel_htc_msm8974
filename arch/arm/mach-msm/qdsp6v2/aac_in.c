@@ -192,7 +192,7 @@ static long aac_in_ioctl(struct file *file,
 			rc = -EINVAL;
 			break;
 		}
-		if ((cfg.sample_rate < 8000) && (cfg.sample_rate > 48000)) {
+		if ((cfg.sample_rate < 8000) || (cfg.sample_rate > 48000)) {
 			pr_err("%s: ERROR in setting samplerate = %d\n",
 				__func__, cfg.sample_rate);
 			rc = -EINVAL;

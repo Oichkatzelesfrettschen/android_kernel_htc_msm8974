@@ -1266,7 +1266,7 @@ limProcessAuthFrame(tpAniSirGlobal pMac, tANI_U8 *pRxPacketInfo, tpPESession pse
 
                         if (pKeyMapEntry)
                         {
-                            if (pKeyMapEntry->key == NULL)
+                            if (!pKeyMapEntry->wepOn)
                             {
                                 // Log error
                                 PELOGE(limLog(pMac, LOGE,

@@ -131,7 +131,7 @@ void hddTraceDump(void *pMac, tpvosTraceRecord pRecord, tANI_U16 recIndex)
     }
 }
 
-void hddTraceInit()
+void hddTraceInit(void)
 {
     vosTraceRegister(VOS_MODULE_ID_HDD, (tpvosTraceCb)&hddTraceDump);
 }

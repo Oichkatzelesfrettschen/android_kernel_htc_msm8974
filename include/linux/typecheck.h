@@ -4,11 +4,12 @@
 /*
  * Check at compile time that something is of a particular type.
  * Always evaluates to 1 so you may use it easily in comparisons.
+ * Comparing pointers to the two types draws the compiler's distinct
+ * pointer types diagnostic on a mismatch; qualifiers on x's type are
+ * accepted, and x is never evaluated.
  */
 #define typecheck(type,x) \
-({	type __dummy; \
-	typeof(x) __dummy2; \
-	(void)(&__dummy == &__dummy2); \
+({	(void)((type *)0 == (typeof(x) *)0); \
 	1; \
 })
 

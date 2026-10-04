@@ -13,7 +13,7 @@ extern unsigned long wrong_size_cmpxchg(volatile void *ptr);
 static inline unsigned long __cmpxchg_local_generic(volatile void *ptr,
 		unsigned long old, unsigned long new, int size)
 {
-	unsigned long flags, prev;
+	unsigned long flags, uninitialized_var(prev);
 
 	/*
 	 * Sanity checking, compile-time.

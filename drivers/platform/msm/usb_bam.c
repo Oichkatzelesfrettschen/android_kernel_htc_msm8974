@@ -105,12 +105,12 @@ static char *bam_enable_strings[MAX_BAMS] = {
 
 static enum usb_bam ipa_rm_bams[] = {HSUSB_BAM, HSIC_BAM};
 
-static enum ipa_client_type ipa_rm_resource_prod[MAX_BAMS] = {
+static enum ipa_rm_resource_name ipa_rm_resource_prod[MAX_BAMS] = {
 	[HSUSB_BAM] = IPA_RM_RESOURCE_USB_PROD,
 	[HSIC_BAM]  = IPA_RM_RESOURCE_HSIC_PROD,
 };
 
-static enum ipa_client_type ipa_rm_resource_cons[MAX_BAMS] = {
+static enum ipa_rm_resource_name ipa_rm_resource_cons[MAX_BAMS] = {
 	[HSUSB_BAM] = IPA_RM_RESOURCE_USB_CONS,
 	[HSIC_BAM]  = IPA_RM_RESOURCE_HSIC_CONS,
 };
@@ -2706,7 +2706,7 @@ bool msm_bam_lpm_ok(void)
 }
 EXPORT_SYMBOL(msm_bam_lpm_ok);
 
-void msm_bam_notify_lpm_resume()
+void msm_bam_notify_lpm_resume(void)
 {
 	/*
 	 * If core was resumed from lpm, just clear the
