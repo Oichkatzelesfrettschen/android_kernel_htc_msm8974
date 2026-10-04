@@ -2539,7 +2539,6 @@ static int diagchar_setup_cdev(dev_t devno)
 {
 
 	int err;
-	struct device	*diagdev;
 
 	cdev_init(driver->cdev, &diagcharfops);
 
@@ -2592,7 +2591,7 @@ static int diagchar_setup_cdev(dev_t devno)
 #endif
 #endif
 
-	diagdev->power.wakeup = wakeup_source_register("DIAG_WS");
+	driver->diag_dev->power.wakeup = wakeup_source_register("DIAG_WS");
 
 	return 0;
 
