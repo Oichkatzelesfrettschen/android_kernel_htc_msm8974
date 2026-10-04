@@ -643,7 +643,12 @@ endif
 
 ifdef CONFIG_LTO_CLANG_THIN
 CC_FLAGS_LTO	:= -flto=thin -fsplit-lto-unit
-LDFLAGS_LTO	:= --thinlto-cache-dir=.thinlto-cache
+# A ThinLTO cache hit replays a module's native object without running its
+# codegen, so the diagnostics codegen raises (inline asm among them) never
+# print and --fatal-warnings has nothing to fail on. The cache is opt-in:
+# KBUILD_THINLTO_CACHE names its directory, and a warnings-as-errors gate
+# leaves it unset.
+LDFLAGS_LTO	:= $(if $(KBUILD_THINLTO_CACHE),--thinlto-cache-dir=$(KBUILD_THINLTO_CACHE))
 else
 CC_FLAGS_LTO	:= -flto
 LDFLAGS_LTO	:=
@@ -1318,7 +1323,7 @@ endif # CONFIG_MODULES
 # make distclean Remove editor backup files, patch leftover files and the like
 
 # Directories & files removed with 'make clean'
-CLEAN_DIRS  += $(MODVERDIR) .thinlto-cache
+CLEAN_DIRS  += $(MODVERDIR) .thinlto-cache $(KBUILD_THINLTO_CACHE)
 CLEAN_FILES +=	vmlinux System.map .tmp_initcalls.lds \
                 .tmp_kallsyms* .tmp_version .tmp_vmlinux* .tmp_System.map
 
