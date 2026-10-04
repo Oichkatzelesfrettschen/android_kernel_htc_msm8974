@@ -581,6 +581,45 @@ endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
 
+ifdef CONFIG_LTO_CLANG
+# Kconfig cannot probe the toolchain here, so the build checks it: bitcode
+# objects need Clang to emit them, LLD to optimize them, and the LLVM NM and
+# AR to read them; LLD assembles inline asm with the integrated assembler.
+ifeq ($(shell $(CC) -dM -E -x c /dev/null 2>/dev/null | grep -c '__clang__'),0)
+$(error CONFIG_LTO_CLANG requires CC to be Clang: $(CC))
+endif
+ifeq ($(shell $(LD) --version 2>/dev/null | grep -c LLD),0)
+$(error CONFIG_LTO_CLANG requires LD to be ld.lld: $(LD))
+endif
+ifeq ($(shell $(NM) --help 2>/dev/null | head -n 1 | grep -ci llvm),0)
+$(error CONFIG_LTO_CLANG requires NM to be llvm-nm: $(NM))
+endif
+ifeq ($(shell $(AR) --help 2>/dev/null | head -n 1 | grep -ci llvm),0)
+$(error CONFIG_LTO_CLANG requires AR to be llvm-ar: $(AR))
+endif
+ifneq ($(filter -no-integrated-as -fno-integrated-as,$(CC) $(KBUILD_CFLAGS) $(KBUILD_AFLAGS)),)
+$(error CONFIG_LTO_CLANG requires the integrated assembler)
+endif
+
+ifdef CONFIG_LTO_CLANG_THIN
+CC_FLAGS_LTO	:= -flto=thin -fsplit-lto-unit
+LDFLAGS_LTO	:= --thinlto-cache-dir=.thinlto-cache
+else
+CC_FLAGS_LTO	:= -flto
+LDFLAGS_LTO	:=
+endif
+# Limit inlining across translation units to reduce binary size.
+LDFLAGS_LTO	+= -mllvm -import-instr-limit=5
+# Symbols keep default visibility: this static, non-PIC kernel has no GOT
+# to avoid, and a hidden global turns local in vmlinux, which would change
+# its /proc/kallsyms type from 'T' to 't'.
+# Objects whose output is read as native ELF or assembly text add this.
+DISABLE_LTO	:= -fno-lto
+
+KBUILD_CFLAGS	+= $(CC_FLAGS_LTO)
+export CC_FLAGS_LTO LDFLAGS_LTO DISABLE_LTO
+endif
+
 ifneq ($(CONFIG_FRAME_WARN),0)
 KBUILD_CFLAGS += $(call cc-option,-Wframe-larger-than=${CONFIG_FRAME_WARN})
 endif
@@ -801,6 +840,32 @@ vmlinux-all  := $(vmlinux-init) $(vmlinux-main)
 vmlinux-lds  := arch/$(SRCARCH)/kernel/vmlinux.lds
 export KBUILD_VMLINUX_OBJS := $(vmlinux-all)
 
+ifdef CONFIG_LTO_CLANG
+# One relocatable LLD link turns the bitcode of every vmlinux object into
+# native code in vmlinux.o, and kallsyms and the final link reuse it. The
+# built-in.o thin archives are linked whole; lib.a archives keep lazy member
+# selection. The generated script lists every initcall section in link
+# order, and the link fails when one escapes it, because vmlinux.lds
+# collects only the merged level sections.
+vmlinux-lto-inputs = $(vmlinux-init) --start-group \
+	$(foreach input,$(vmlinux-main),$(if $(filter %.a,$(input)),\
+	--no-whole-archive $(input) --whole-archive,$(input))) --end-group
+vmlinux-lto-scripts := $(srctree)/scripts/generate_initcall_order.pl
+
+quiet_cmd_vmlinux__ = LD      $@
+      cmd_vmlinux__ = $(LD) $(LDFLAGS) $(LDFLAGS_vmlinux) -o $@ \
+      -T $(vmlinux-lds) vmlinux.o                                \
+      $(filter-out $(vmlinux-lds) $(vmlinux-init) $(vmlinux-main) vmlinux.o FORCE ,$^)
+
+quiet_cmd_vmlinux-modpost = LTO     $@
+      cmd_vmlinux-modpost = $(PERL) $(srctree)/scripts/generate_initcall_order.pl \
+	 $(vmlinux-init) $(vmlinux-main) > .tmp_initcalls.lds &&                \
+	 $(LD) $(LDFLAGS) -r $(LDFLAGS_LTO) -T .tmp_initcalls.lds -o $@          \
+	 --whole-archive $(vmlinux-lto-inputs) --no-whole-archive               \
+	 $(filter-out $(vmlinux-init) $(vmlinux-main) $(vmlinux-lto-scripts) FORCE ,$^) && \
+	 ! $(OBJDUMP) -h $@ | grep -q 'initcall[0-9a-z]*\.init\.\.'
+endif
+
 # Rule to link vmlinux - also used during CONFIG_KALLSYMS
 # May be overridden by arch/$(ARCH)/Makefile
 quiet_cmd_vmlinux__ ?= LD      $@
@@ -832,10 +897,10 @@ quiet_cmd_sysmap = SYSMAP
 # First command is ':' to allow us to use + in front of the rule
 define rule_vmlinux__
 	:
-	$(if $(CONFIG_KALLSYMS),,+$(call cmd,vmlinux_version))
+	$(if $(CONFIG_LTO_CLANG)$(CONFIG_KALLSYMS),,+$(call cmd,vmlinux_version))
 
 	$(call cmd,vmlinux__)
-	$(Q)echo 'cmd_$@ := $(cmd_vmlinux__)' > $(@D)/.$(@F).cmd
+	$(Q)echo 'cmd_$@ := $(call make-cmd,vmlinux__)' > $(@D)/.$(@F).cmd
 
 	$(Q)$(if $($(quiet)cmd_sysmap),                                      \
 	  echo '  $($(quiet)cmd_sysmap)  System.map' &&)                     \
@@ -893,9 +958,9 @@ endef
 cmd_ksym_ld = $(cmd_vmlinux__)
 define rule_ksym_ld
 	: 
-	+$(call cmd,vmlinux_version)
+	$(if $(CONFIG_LTO_CLANG),,+$(call cmd,vmlinux_version))
 	$(call cmd,vmlinux__)
-	$(Q)echo 'cmd_$@ := $(cmd_vmlinux__)' > $(@D)/.$(@F).cmd
+	$(Q)echo 'cmd_$@ := $(call make-cmd,vmlinux__)' > $(@D)/.$(@F).cmd
 endef
 
 # Generate .S file with all kernel symbols
@@ -937,15 +1002,20 @@ endif # ifdef CONFIG_KALLSYMS
 
 # Do modpost on a prelinked vmlinux. The finally linked vmlinux has
 # relevant sections renamed as per the linker script.
+# With LTO, init/version.o is part of vmlinux.o, so the version advances
+# before this link rather than before the kallsyms and final links.
+ifndef CONFIG_LTO_CLANG
 quiet_cmd_vmlinux-modpost = LD      $@
       cmd_vmlinux-modpost = $(LD) $(LDFLAGS) -r -o $@                          \
 	 $(vmlinux-init) --start-group $(vmlinux-main) --end-group             \
 	 $(filter-out $(vmlinux-init) $(vmlinux-main) FORCE ,$^)
+endif
 define rule_vmlinux-modpost
 	:
+	$(if $(CONFIG_LTO_CLANG),+$(call cmd,vmlinux_version))
 	+$(call cmd,vmlinux-modpost)
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost $@
-	$(Q)echo 'cmd_$@ := $(cmd_vmlinux-modpost)' > $(dot-target).cmd
+	$(Q)echo 'cmd_$@ := $(call make-cmd,vmlinux-modpost)' > $(dot-target).cmd
 endef
 
 # vmlinux image - including updated kernel symbols
@@ -968,7 +1038,13 @@ ifdef CONFIG_KALLSYMS
 .tmp_vmlinux1: vmlinux.o
 endif
 
+ifdef CONFIG_LTO_CLANG
+# Every link after the LTO link reads vmlinux.o.
+.tmp_vmlinux2 .tmp_vmlinux3: vmlinux.o
+modpost-init := $(vmlinux-init) $(vmlinux-lto-scripts)
+else
 modpost-init := $(filter-out init/built-in.o, $(vmlinux-init))
+endif
 vmlinux.o: $(modpost-init) $(vmlinux-main) FORCE
 	$(call if_changed_rule,vmlinux-modpost)
 
@@ -1200,8 +1276,8 @@ endif # CONFIG_MODULES
 # make distclean Remove editor backup files, patch leftover files and the like
 
 # Directories & files removed with 'make clean'
-CLEAN_DIRS  += $(MODVERDIR)
-CLEAN_FILES +=	vmlinux System.map \
+CLEAN_DIRS  += $(MODVERDIR) .thinlto-cache
+CLEAN_FILES +=	vmlinux System.map .tmp_initcalls.lds \
                 .tmp_kallsyms* .tmp_version .tmp_vmlinux* .tmp_System.map
 
 # Directories & files removed with 'make mrproper'
