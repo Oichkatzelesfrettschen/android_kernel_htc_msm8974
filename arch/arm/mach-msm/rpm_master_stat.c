@@ -333,16 +333,17 @@ static struct msm_rpm_master_stats_platform_data
 	 */
 	for (i = 0; i < pdata->num_masters; i++) {
 		const char *master_name;
+		size_t name_size;
+
 		of_property_read_string_index(node, "qcom,masters",
 							i, &master_name);
-		pdata->masters[i] = devm_kzalloc(dev, sizeof(char) *
-				strlen(master_name) + 1, GFP_KERNEL);
+		name_size = strlen(master_name) + 1;
+		pdata->masters[i] = devm_kzalloc(dev, name_size, GFP_KERNEL);
 		if (!pdata->masters[i]) {
 			dev_err(dev, "%s:Failed to get memory\n", __func__);
 			goto err;
 		}
-		strlcpy(pdata->masters[i], master_name,
-					strlen(master_name) + 1);
+		strlcpy(pdata->masters[i], master_name, name_size);
 	}
 	return pdata;
 err:
