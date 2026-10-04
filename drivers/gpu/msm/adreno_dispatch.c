@@ -1580,13 +1580,6 @@ replay:
 	return 1;
 }
 
-static inline int cmdbatch_consumed(struct kgsl_cmdbatch *cmdbatch,
-		unsigned int consumed, unsigned int retired)
-{
-	return ((timestamp_cmp(cmdbatch->timestamp, consumed) >= 0) &&
-		(timestamp_cmp(retired, cmdbatch->timestamp) < 0));
-}
-
 static void _print_recovery(struct kgsl_device *device,
 		struct kgsl_cmdbatch *cmdbatch)
 {

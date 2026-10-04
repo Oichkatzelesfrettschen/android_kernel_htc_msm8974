@@ -1191,7 +1191,7 @@ wcnss_wlan_ctrl_probe(struct platform_device *pdev)
 	return 0;
 }
 
-void wcnss_flush_delayed_boot_votes()
+void wcnss_flush_delayed_boot_votes(void)
 {
 	flush_delayed_work(&penv->wcnss_work);
 }
@@ -1510,14 +1510,14 @@ static int wcnss_wlan_resume(struct device *dev)
 	return 0;
 }
 
-void wcnss_prevent_suspend()
+void wcnss_prevent_suspend(void)
 {
 	if (penv)
 		wake_lock(&penv->wcnss_wake_lock);
 }
 EXPORT_SYMBOL(wcnss_prevent_suspend);
 
-void wcnss_allow_suspend()
+void wcnss_allow_suspend(void)
 {
 	if (penv)
 		wake_unlock(&penv->wcnss_wake_lock);

@@ -378,7 +378,8 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
+		   -fno-delete-null-pointer-checks \
+		   $(call cc-option,-std=gnu89)
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
@@ -608,8 +609,32 @@ endif
 
 KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
+# Clang 15 and later, and some distribution GCCs, default to PIE; the kernel
+# is linked at a fixed address and expects absolute code and data.
+KBUILD_CFLAGS	+= $(call cc-option, -fno-PIE)
+KBUILD_AFLAGS	+= $(call cc-option, -fno-PIE)
+
+# Clang warnings mainline Linux leaves off for kernel builds (v5.10 Makefile
+# and scripts/Makefile.extrawarn): packed-member addresses, the kernel's %p
+# format extensions, GNU C extensions, designated-initializer overrides,
+# unused const tables, and out-of-range constant compares in generic macros.
+# cc-disable-warning adds each only where the compiler knows it, so a GCC
+# 4.9 build keeps its flags.
+KBUILD_CFLAGS	+= $(call cc-disable-warning, address-of-packed-member)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, format-invalid-specifier)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, gnu)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, initializer-overrides)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, unused-const-variable)
+KBUILD_CFLAGS	+= $(call cc-disable-warning, tautological-constant-out-of-range-compare)
+
 ifdef CONFIG_DEBUG_INFO
-KBUILD_CFLAGS	+= -g
+# clang 5+ defaults -g to DWARF5, whose .file directives are 0-indexed;
+# this tree's binutils (GNU as 2.2x, GCC 4.9-era) reads DWARF <= 4, where
+# file numbering starts at 1, and rejects "file 0" as "file number less
+# than one". -gdwarf-4 is accepted by both compilers (GCC has taken
+# -gdwarf-<N> since long before 4.9) and keeps the emitted line tables
+# inside what this tree's assembler parses.
+KBUILD_CFLAGS	+= -g $(call cc-option, -gdwarf-4)
 KBUILD_AFLAGS	+= -gdwarf-2
 endif
 

@@ -583,34 +583,18 @@ EXPORT_SYMBOL(dump_fpu);
  * thread function.  r4 is the thread argument, r5 is the pointer to
  * the thread function, and r6 points to the exit function.
  */
+/*
+ * kernel_thread_helper() and kernel_thread_exit() live in
+ * kernel_thread_helper.S: clang emits an unnumbered ".file" marker
+ * around file-scope inline asm that collides with the numbered DWARF
+ * file table -gdwarf-4 produces for this TU, and GNU as reports "file
+ * number 1 already allocated". A real assembly file carries no such
+ * marker.
+ */
 extern void kernel_thread_helper(void);
-asm(	".pushsection .text\n"
-"	.align\n"
-"	.type	kernel_thread_helper, #function\n"
-"kernel_thread_helper:\n"
-#ifdef CONFIG_TRACE_IRQFLAGS
-"	bl	trace_hardirqs_on\n"
-#endif
-"	msr	cpsr_c, r7\n"
-"	mov	r0, r4\n"
-"	mov	lr, r6\n"
-"	mov	pc, r5\n"
-"	.size	kernel_thread_helper, . - kernel_thread_helper\n"
-"	.popsection");
 
 #ifdef CONFIG_ARM_UNWIND
 extern void kernel_thread_exit(long code);
-asm(	".pushsection .text\n"
-"	.align\n"
-"	.type	kernel_thread_exit, #function\n"
-"kernel_thread_exit:\n"
-"	.fnstart\n"
-"	.cantunwind\n"
-"	bl	do_exit\n"
-"	nop\n"
-"	.fnend\n"
-"	.size	kernel_thread_exit, . - kernel_thread_exit\n"
-"	.popsection");
 #else
 #define kernel_thread_exit	do_exit
 #endif

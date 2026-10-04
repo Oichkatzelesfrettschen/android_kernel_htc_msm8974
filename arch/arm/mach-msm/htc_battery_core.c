@@ -359,7 +359,7 @@ static ssize_t htc_battery_set_full_level_dis_batt_chg(struct device *dev,
 	return count;
 }
 
-int htc_battery_charger_disable()
+int htc_battery_charger_disable(void)
 {
 	int rc = 0;
 
@@ -374,7 +374,7 @@ int htc_battery_charger_disable()
 	return rc;
 }
 
-int htc_battery_pwrsrc_disable()
+int htc_battery_pwrsrc_disable(void)
 {
 	int rc = 0;
 

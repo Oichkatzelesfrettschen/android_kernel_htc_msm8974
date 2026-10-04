@@ -342,18 +342,21 @@ enum cfqq_state_flags {
 	CFQ_CFQQ_FLAG_wait_busy,	/* Waiting for next request */
 };
 
-#define CFQ_CFQQ_FNS(name)						\
+#define CFQ_CFQQ_MARK_TEST_FNS(name)					\
 static inline void cfq_mark_cfqq_##name(struct cfq_queue *cfqq)		\
 {									\
 	(cfqq)->flags |= (1 << CFQ_CFQQ_FLAG_##name);			\
 }									\
-static inline void cfq_clear_cfqq_##name(struct cfq_queue *cfqq)	\
-{									\
-	(cfqq)->flags &= ~(1 << CFQ_CFQQ_FLAG_##name);			\
-}									\
 static inline int cfq_cfqq_##name(const struct cfq_queue *cfqq)		\
 {									\
 	return ((cfqq)->flags & (1 << CFQ_CFQQ_FLAG_##name)) != 0;	\
+}
+
+#define CFQ_CFQQ_FNS(name)						\
+CFQ_CFQQ_MARK_TEST_FNS(name)						\
+static inline void cfq_clear_cfqq_##name(struct cfq_queue *cfqq)	\
+{									\
+	(cfqq)->flags &= ~(1 << CFQ_CFQQ_FLAG_##name);			\
 }
 
 CFQ_CFQQ_FNS(on_rr);
@@ -364,12 +367,14 @@ CFQ_CFQQ_FNS(fifo_expire);
 CFQ_CFQQ_FNS(idle_window);
 CFQ_CFQQ_FNS(prio_changed);
 CFQ_CFQQ_FNS(slice_new);
-CFQ_CFQQ_FNS(sync);
+/* The sync flag is set when the queue is created and never cleared. */
+CFQ_CFQQ_MARK_TEST_FNS(sync);
 CFQ_CFQQ_FNS(coop);
 CFQ_CFQQ_FNS(split_coop);
 CFQ_CFQQ_FNS(deep);
 CFQ_CFQQ_FNS(wait_busy);
 #undef CFQ_CFQQ_FNS
+#undef CFQ_CFQQ_MARK_TEST_FNS
 
 #ifdef CONFIG_CFQ_GROUP_IOSCHED
 #define cfq_log_cfqq(cfqd, cfqq, fmt, args...)	\
@@ -554,15 +559,6 @@ static inline u64 max_vdisktime(u64 min_vdisktime, u64 vdisktime)
 {
 	s64 delta = (s64)(vdisktime - min_vdisktime);
 	if (delta > 0)
-		min_vdisktime = vdisktime;
-
-	return min_vdisktime;
-}
-
-static inline u64 min_vdisktime(u64 min_vdisktime, u64 vdisktime)
-{
-	s64 delta = (s64)(vdisktime - min_vdisktime);
-	if (delta < 0)
 		min_vdisktime = vdisktime;
 
 	return min_vdisktime;

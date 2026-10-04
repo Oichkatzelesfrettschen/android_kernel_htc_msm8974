@@ -1012,7 +1012,6 @@ void gic_set_irq_secure(unsigned int irq)
 {
 	unsigned int gicd_isr_reg, gicd_pri_reg;
 	unsigned int mask = 0xFFFFFF00;
-	struct gic_chip_data *gic_data = &gic_data[0];
 	struct irq_data *d = irq_get_irq_data(irq);
 
 	if (is_cpu_secure()) {
@@ -1075,7 +1074,6 @@ int __init gic_of_init(struct device_node *node, struct device_node *parent)
 bool gic_is_irq_pending(unsigned int irq)
 {
 	struct irq_data *d = irq_get_irq_data(irq);
-	struct gic_chip_data *gic_data = &gic_data[0];
 	u32 mask, val;
 
 	WARN_ON(!irqs_disabled());
@@ -1097,7 +1095,6 @@ bool gic_is_irq_pending(unsigned int irq)
  */
 void gic_clear_irq_pending(unsigned int irq)
 {
-	struct gic_chip_data *gic_data = &gic_data[0];
 	struct irq_data *d = irq_get_irq_data(irq);
 
 	u32 mask, val;

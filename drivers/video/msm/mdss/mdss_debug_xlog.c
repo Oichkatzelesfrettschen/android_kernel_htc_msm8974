@@ -174,8 +174,7 @@ void mdss_xlog_tout_handler(const char *name, ...)
 
 		list_for_each_entry_safe(blk_base, tmp, &mdd->base_list, head) {
 
-			if (blk_base->name &&
-				!strcmp(blk_base->name, blk_name) &&
+			if (!strcmp(blk_base->name, blk_name) &&
 				mdd->logd.enable_reg_dump) {
 				pr_info("\n%s  :   =========%s DUMP=========\n",
 						__func__, blk_base->name);

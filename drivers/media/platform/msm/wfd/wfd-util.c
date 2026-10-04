@@ -21,7 +21,7 @@
 
 static struct dentry *wfd_debugfs_root;
 
-int wfd_stats_setup()
+int wfd_stats_setup(void)
 {
 	wfd_debugfs_root = debugfs_create_dir("wfd", NULL);
 
@@ -33,7 +33,7 @@ int wfd_stats_setup()
 		return 0;
 }
 
-void wfd_stats_teardown()
+void wfd_stats_teardown(void)
 {
 	if (wfd_debugfs_root)
 		debugfs_remove_recursive(wfd_debugfs_root);

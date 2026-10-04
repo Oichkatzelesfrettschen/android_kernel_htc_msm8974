@@ -273,12 +273,6 @@ static void _fips_drbg_init_error(struct msm_rng_device  *msm_rng_dev)
 	kzfree(msm_rng_dev);
 	panic("software random number generator initialization error.\n");
 }
-#else
-static inline void _fips_drbg_init_error(struct msm_rng_device *msm_rng_dev)
-{
-	return;
-}
-
 #endif
 
 #ifdef CONFIG_FIPS_ENABLE

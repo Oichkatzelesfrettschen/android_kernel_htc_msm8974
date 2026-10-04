@@ -411,7 +411,7 @@ static int curr_con_mode;
   --------------------------------------------------------------------------*/
 static void hdd_vos_trace_enable(VOS_MODULE_ID moduleId, v_U32_t bitmask)
 {
-   wpt_tracelevel level;
+   VOS_TRACE_LEVEL level;
 
    /* if the bitmask is the default value, then a bitmask was not
       specified in cfg.ini, so leave the logging level alone (it
@@ -748,7 +748,7 @@ hdd_extract_assigned_int_from_str
 
     while ((SPACE_ASCII_VALUE  == *pInPtr) && ('\0' !=  *pInPtr)) pInPtr++;
 
-    val = sscanf(pInPtr, "%32s ", buf);
+    val = sscanf(pInPtr, "%31s ", buf);
     if (val < 0 && val > strlen(pInPtr))
     {
         return NULL;
@@ -5984,10 +5984,7 @@ void hdd_full_pwr_cbk(void *callbackContext, eHalStatus status)
    hdd_context_t *pHddCtx = (hdd_context_t*)callbackContext;
 
    hddLog(VOS_TRACE_LEVEL_INFO_HIGH,"HDD full Power callback status = %d", status);
-   if(&pHddCtx->full_pwr_comp_var)
-   {
-      complete(&pHddCtx->full_pwr_comp_var);
-   }
+   complete(&pHddCtx->full_pwr_comp_var);
 }
 
 /**---------------------------------------------------------------------------

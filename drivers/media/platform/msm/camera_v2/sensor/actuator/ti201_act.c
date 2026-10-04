@@ -162,7 +162,8 @@ static int32_t msm_actuator_iaf_move_focus(
 			move_params->ringing_params[a_ctrl->curr_region_index].damping_delay);
 
 	reg_setting.reg_setting = a_ctrl->i2c_reg_tbl;
-	reg_setting.data_type = a_ctrl->i2c_data_type;
+	reg_setting.data_type =
+		msm_actuator_i2c_data_type(a_ctrl->i2c_data_type);
 	reg_setting.size = a_ctrl->i2c_tbl_index;
 	if(a_ctrl && a_ctrl->i2c_client.i2c_func_tbl)
            rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write_table_w_microdelay(
@@ -243,7 +244,8 @@ static int32_t msm_actuator_move_focus(
 		 a_ctrl->i2c_client.cci_client->sid, a_ctrl->i2c_client.cci_client->sid<<1);
 
 	reg_setting.reg_setting = a_ctrl->i2c_reg_tbl;
-	reg_setting.data_type = a_ctrl->i2c_data_type;
+	reg_setting.data_type =
+		msm_actuator_i2c_data_type(a_ctrl->i2c_data_type);
 	reg_setting.size = a_ctrl->i2c_tbl_index;
 	rc = a_ctrl->i2c_client.i2c_func_tbl->i2c_write_table_w_microdelay(
 		&a_ctrl->i2c_client,
