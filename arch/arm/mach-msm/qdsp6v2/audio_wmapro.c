@@ -69,7 +69,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			rc = -EINVAL;
 			break;
 		}
-		if ((wmapro_config->samplingrate <= 48000) ||
+		if ((wmapro_config->samplingrate <= 48000) &&
 		(wmapro_config->samplingrate > 0)) {
 			wmapro_cfg.sample_rate =
 				wmapro_config->samplingrate;
@@ -81,7 +81,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		wmapro_cfg.avg_bytes_per_sec =
 				wmapro_config->avgbytespersecond;
-		if ((wmapro_config->asfpacketlength <= 13376) ||
+		if ((wmapro_config->asfpacketlength <= 13376) &&
 		(wmapro_config->asfpacketlength > 0)) {
 			wmapro_cfg.block_align =
 				wmapro_config->asfpacketlength;
