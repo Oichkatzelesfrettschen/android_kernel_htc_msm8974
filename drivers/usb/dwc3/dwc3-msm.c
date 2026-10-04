@@ -2300,7 +2300,7 @@ void htc_dwc3_disable_usb(int state)
 void htc_dwc3_msm_otg_set_vbus_state(int online)
 {
 	struct dwc3_msm *mdwc = context;
-	struct dwc3_otg *dotg;
+	struct dwc3_otg *dotg = NULL;
 	dev_dbg(mdwc->dev, "%s: notify xceiv event\n", __func__);
 
 	if (mdwc->otg_xceiv) {
