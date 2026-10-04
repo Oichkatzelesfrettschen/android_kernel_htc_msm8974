@@ -1411,11 +1411,6 @@ static long acdb_ioctl(struct file *f,
 		goto done;
 	}
 
-	if (data == NULL) {
-		pr_err("%s: NULL pointer sent to driver!\n", __func__);
-		result = -EFAULT;
-		goto done;
-	}
 
 	if (size > sizeof(struct cal_block))
 		pr_err("%s: More cal data for ioctl 0x%x then expected, size received: %d\n",
