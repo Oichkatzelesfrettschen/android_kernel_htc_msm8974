@@ -7410,7 +7410,7 @@ void __init sched_init(void)
 #ifdef CONFIG_SMP
 	zalloc_cpumask_var(&sched_domains_tmpmask, GFP_NOWAIT);
 	/* May be allocated at isolcpus cmdline parse time */
-	if (cpu_isolated_map == NULL)
+	if (!cpumask_available(cpu_isolated_map))
 		zalloc_cpumask_var(&cpu_isolated_map, GFP_NOWAIT);
 #endif
 	init_sched_fair_class();
