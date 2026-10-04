@@ -328,15 +328,33 @@ include $(srctree)/scripts/Kbuild.include
 
 # Make variables (CC, etc...)
 
-AS		= $(CROSS_COMPILE)as
+# LLVM=1 selects Clang, LLD and the LLVM binutils, LLVM=<dir>/ takes them
+# from that directory and LLVM=-<version> by suffix. A tool named on the
+# command line still wins, as vendor/lineage kernel.mk passes CC, LD and AR.
+ifneq ($(LLVM),)
+ifneq ($(filter %/,$(LLVM)),)
+LLVM_PREFIX	:= $(LLVM)
+else ifneq ($(filter -%,$(LLVM)),)
+LLVM_SUFFIX	:= $(LLVM)
+endif
+LD		= $(LLVM_PREFIX)ld.lld$(LLVM_SUFFIX)
+CC		= $(LLVM_PREFIX)clang$(LLVM_SUFFIX)
+AR		= $(LLVM_PREFIX)llvm-ar$(LLVM_SUFFIX)
+NM		= $(LLVM_PREFIX)llvm-nm$(LLVM_SUFFIX)
+STRIP		= $(LLVM_PREFIX)llvm-strip$(LLVM_SUFFIX)
+OBJCOPY		= $(LLVM_PREFIX)llvm-objcopy$(LLVM_SUFFIX)
+OBJDUMP		= $(LLVM_PREFIX)llvm-objdump$(LLVM_SUFFIX)
+else
 LD		= $(CROSS_COMPILE)ld
 CC		= $(CROSS_COMPILE)gcc
-CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
 STRIP		= $(CROSS_COMPILE)strip
 OBJCOPY		= $(CROSS_COMPILE)objcopy
 OBJDUMP		= $(CROSS_COMPILE)objdump
+endif
+AS		= $(CROSS_COMPILE)as
+CPP		= $(CC) -E
 AWK		= awk
 GENKSYMS	= scripts/genksyms/genksyms
 INSTALLKERNEL  := installkernel
@@ -386,6 +404,28 @@ KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_AFLAGS_MODULE  := -DMODULE
 KBUILD_CFLAGS_MODULE  := -DMODULE -fno-pic
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+
+# With LLVM set, Clang targets the ARM EABI that this tree's Clang build
+# uses: kernel.mk passes CC=clang with no target, and its CLANG_TRIPLE
+# (arm-linux-gnu) names no EABI. LLVM_IAS=0 assembles with the GNU as
+# that CROSS_COMPILE names instead of the integrated assembler.
+ifneq ($(LLVM),)
+CLANG_TARGET_FLAGS_arm	:= arm-linux-gnueabi
+ifeq ($(CLANG_TARGET_FLAGS_$(SRCARCH)),)
+$(error LLVM=$(LLVM) has no Clang target for ARCH=$(SRCARCH))
+endif
+CLANG_FLAGS	:= --target=$(CLANG_TARGET_FLAGS_$(SRCARCH))
+ifeq ($(LLVM_IAS),0)
+ifeq ($(CROSS_COMPILE),)
+$(error LLVM_IAS=0 requires CROSS_COMPILE to name the GNU assembler)
+endif
+CLANG_FLAGS	+= -no-integrated-as \
+		   --prefix=$(dir $(shell which $(CROSS_COMPILE)as))$(notdir $(CROSS_COMPILE))
+endif
+KBUILD_CFLAGS	+= $(CLANG_FLAGS)
+KBUILD_AFLAGS	+= $(CLANG_FLAGS)
+export CLANG_FLAGS
+endif
 
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
