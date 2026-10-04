@@ -1163,6 +1163,25 @@ static void insert_detect_work_func(struct work_struct *work)
 		}
 	}
 	mic = get_mic_status();
+
+	/* A removal during the mic sample reaches is_ext_insert only after
+	 * this work releases mutex_lock, so read HPIN after the sample. An
+	 * open pin reruns the detection: hs_notify_plug_event cancels the
+	 * rerun on a removal, and the rerun classifies a pin that closed again
+	 * without a reported edge. */
+	if (hs_mgr_notifier.hpin_gpio() == 1) {
+		mutex_unlock(&hi->mutex_lock);
+#ifdef CONFIG_HTC_INSERT_NOTIFY_DELAY
+		if (hs_mgr_notifier.hs_insert)
+			hs_mgr_notifier.hs_insert(0);
+#endif
+		if (hs_mgr_notifier.key_int_enable)
+			hs_mgr_notifier.key_int_enable(1);
+		queue_delayed_work(detect_wq, &insert_detect_work,
+				   HS_JIFFIES_INSERT);
+		return;
+	}
+
 	if (hi->pdata.driver_flag & DRIVER_HS_MGR_FLOAT_DET) {
 		pr_debug("Headset float detect enable\n");
 		if (mic == HEADSET_UNPLUG) {
