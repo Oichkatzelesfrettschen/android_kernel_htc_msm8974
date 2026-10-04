@@ -1311,21 +1311,33 @@ static int __perf_remove_from_context(void *info)
 }
 
 #ifdef CONFIG_SMP
-static void perf_retry_remove(struct remove_event *rep)
+/*
+ * A per-CPU event of a PMU with events_across_hotplug stays in its CPU's
+ * context while that CPU is offline, and only that CPU may run the PMU's del
+ * callback for it. Bring the CPU up and remove the event there. The hotplug
+ * read lock holds the CPU online from the online check in
+ * smp_call_function_single() to the end of the removal; a cpu_down() that
+ * lands between cpu_up() and that lock makes the call return -ENXIO, and the
+ * loop brings the CPU up again. cpu_up() returns -EINVAL for a CPU that is
+ * already online, which the event's CPU was when the event was opened.
+ */
+static void __ref perf_retry_remove(struct remove_event *rep)
 {
-	int up_ret;
-	struct perf_event *event = rep->event;
-	/*
-	 * CPU was offline. Bring it online so we can
-	 * gracefully exit a perf context.
-	 */
-	up_ret = cpu_up(event->cpu);
-	if (!up_ret)
-		/* Try the remove call once again. */
-		cpu_function_call(event->cpu, __perf_remove_from_context, rep);
-	else
-		pr_err("Failed to bring up CPU: %d, ret: %d\n",
-		       event->cpu, up_ret);
+	int cpu = rep->event->cpu;
+	int up_ret, ret;
+
+	do {
+		up_ret = cpu_up(cpu);
+		if (up_ret && (up_ret != -EINVAL || !cpu_present(cpu))) {
+			pr_err("Failed to bring up CPU: %d, ret: %d\n",
+			       cpu, up_ret);
+			return;
+		}
+
+		get_online_cpus();
+		ret = cpu_function_call(cpu, __perf_remove_from_context, rep);
+		put_online_cpus();
+	} while (ret == -ENXIO);
 }
 #else
 static void perf_retry_remove(struct remove_event *rep)
