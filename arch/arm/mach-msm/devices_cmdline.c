@@ -158,9 +158,26 @@ int __init board_mfg_mode_init(char *s)
 }
 __setup("androidboot.mode=", board_mfg_mode_init);
 
+/*
+ * HBOOT derives androidboot.mode from the PMIC power-on reason, so its
+ * RECOVERY menu entry after a USB-insertion power-on passes
+ * offmode_charging to the recovery image, and the bootloader's tokens
+ * follow the image's own. A recovery image carries htc.recovery_boot=1,
+ * under which an offmode_charging boot reports MFG_MODE_RECOVERY and the
+ * touch, sensor-hub and camera drivers probe.
+ */
+static int recovery_boot;
+static int __init board_recovery_boot_init(char *s)
+{
+	recovery_boot = !strcmp(s, "1");
+	return 1;
+}
+__setup("htc.recovery_boot=", board_recovery_boot_init);
 
 int board_mfg_mode(void)
 {
+	if (recovery_boot && mfg_mode == MFG_MODE_OFFMODE_CHARGING)
+		return MFG_MODE_RECOVERY;
 	return mfg_mode;
 }
 
