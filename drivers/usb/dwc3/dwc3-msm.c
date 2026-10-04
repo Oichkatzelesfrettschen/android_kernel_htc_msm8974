@@ -210,26 +210,6 @@ static inline u32 dwc3_msm_read_reg(void *base, u32 offset)
 }
 
 /**
- * Read register masked field with debug info.
- *
- * @base - DWC3 base virtual address.
- * @offset - register offset.
- * @mask - register bitmask.
- *
- * @return u32
- */
-static inline u32 dwc3_msm_read_reg_field(void *base,
-					  u32 offset,
-					  const u32 mask)
-{
-	u32 shift = find_first_bit((void *)&mask, 32);
-	u32 val = ioread32(base + offset);
-	val &= mask;		/* clear other bits */
-	val >>= shift;
-	return val;
-}
-
-/**
  *
  * Write register with debug info.
  *
