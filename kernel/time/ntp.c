@@ -239,16 +239,6 @@ static inline void pps_fill_timex(struct timex *txc)
 #endif /* CONFIG_NTP_PPS */
 
 
-/**
- * ntp_synced - Returns 1 if the NTP status is not UNSYNC
- *
- */
-static inline int ntp_synced(void)
-{
-	return !(time_status & STA_UNSYNC);
-}
-
-
 /*
  * NTP methods:
  */
@@ -516,6 +506,15 @@ out:
 }
 
 #ifdef CONFIG_GENERIC_CMOS_UPDATE
+
+/**
+ * ntp_synced - Returns 1 if the NTP status is not UNSYNC
+ *
+ */
+static inline int ntp_synced(void)
+{
+	return !(time_status & STA_UNSYNC);
+}
 
 static void sync_cmos_clock(struct work_struct *work);
 
