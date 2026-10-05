@@ -2364,8 +2364,8 @@ static int msm_spi_setup(struct spi_device *spi)
 		msm_spi_pm_resume_runtime(dd->dev);
 
 	if (dd->suspended) {
-		mutex_unlock(&dd->core_lock);
-		return -EBUSY;
+		rc = -EBUSY;
+		goto no_resources;
 	}
 
 	if (dd->pdata->is_shared) {
@@ -3421,14 +3421,19 @@ static int msm_spi_pm_resume_runtime(struct device *device)
 		return 0;
 
 	/*
-	 * A failed acquisition leaves dd->suspended set, so the paired
-	 * runtime suspend returns before put_local_resources() and never
-	 * releases clock references or GPIOs this resume did not take.
+	 * A failed acquisition leaves dd->suspended set: setup and transfers
+	 * refuse the controller, the paired runtime suspend returns before
+	 * put_local_resources() and so releases nothing this resume did not
+	 * take. The callback returns 0 because rpm_callback() latches any
+	 * error in power.runtime_error, after which rpm_resume() refuses every
+	 * later resume. The device reads RPM_ACTIVE until its usage count
+	 * drops and autosuspend runs the suspend callback; the next runtime
+	 * resume after that retries the acquisition.
 	 */
 	if (!dd->pdata->is_shared) {
 		ret = get_local_resources(dd);
 		if (ret)
-			return ret;
+			return 0;
 	}
 	msm_spi_clk_path_init(dd);
 	if (!dd->pdata->active_only)
