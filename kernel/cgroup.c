@@ -271,6 +271,7 @@ EXPORT_SYMBOL_GPL(cgroup_is_descendant);
 /* bits in struct cgroupfs_root flags field */
 enum {
 	ROOT_NOPREFIX, /* mounted subsystems have no named prefix */
+	ROOT_CGROUP2,  /* mounted through compat_cgroup2_fs_type */
 };
 
 static int cgroup_is_releasable(const struct cgroup *cgrp)
@@ -1361,6 +1362,17 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	mutex_lock(&cgroup_mutex);
 	mutex_lock(&cgroup_root_mutex);
 
+	/*
+	 * The unified hierarchy binds no subsystem and takes no mount option,
+	 * so a remount changes only the generic superblock flags.
+	 */
+	if (test_bit(ROOT_CGROUP2, &root->flags)) {
+		memset(&opts, 0, sizeof(opts));
+		if (data && *data)
+			ret = -EINVAL;
+		goto out_unlock;
+	}
+
 	/* See what subsystems are wanted */
 	ret = parse_cgroupfs_options(data, &opts);
 	if (ret)
@@ -1579,6 +1591,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	if(is_v2){
 	       memset(&opts, 0, sizeof(opts));
 	       opts.none = true;
+	       set_bit(ROOT_CGROUP2, &opts.flags);
 	}
 
 	else{
@@ -4672,7 +4685,13 @@ static int proc_cgroup_show(struct seq_file *m, void *v)
 		struct cgroup *cgrp;
 		int count = 0;
 
-		seq_printf(m, "%d:", root->hierarchy_id);
+		/*
+		 * The unified hierarchy reports ID 0, which is the "0::" line
+		 * libprocessgroup's GetTaskGroup() looks for on a version 2
+		 * controller.
+		 */
+		seq_printf(m, "%d:", test_bit(ROOT_CGROUP2, &root->flags) ?
+			   0 : root->hierarchy_id);
 		for_each_subsys(root, ss)
 			seq_printf(m, "%s%s", count++ ? "," : "", ss->name);
 		if (strlen(root->name))
