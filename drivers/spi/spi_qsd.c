@@ -3408,6 +3408,7 @@ static int msm_spi_pm_resume_runtime(struct device *device)
 	struct platform_device *pdev = to_platform_device(device);
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct msm_spi	  *dd;
+	int ret;
 
 	dev_dbg(device, "pm_runtime: resuming...\n");
 	if (!master)
@@ -3418,9 +3419,17 @@ static int msm_spi_pm_resume_runtime(struct device *device)
 
 	if (!dd->suspended)
 		return 0;
-	
-	if (!dd->pdata->is_shared)
-		get_local_resources(dd);
+
+	/*
+	 * A failed acquisition leaves dd->suspended set, so the paired
+	 * runtime suspend returns before put_local_resources() and never
+	 * releases clock references or GPIOs this resume did not take.
+	 */
+	if (!dd->pdata->is_shared) {
+		ret = get_local_resources(dd);
+		if (ret)
+			return ret;
+	}
 	msm_spi_clk_path_init(dd);
 	if (!dd->pdata->active_only)
 		msm_spi_clk_path_vote(dd);
