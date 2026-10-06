@@ -24,6 +24,7 @@
 #include <mach/socinfo.h>
 #include <asm/cputype.h>
 #include "acpuclock.h"
+#include "devices.h"
 #include "clock-krait.h"
 #include <linux/regulator/krait-regulator.h>
 
@@ -60,6 +61,8 @@
 #define L2ESR_MPLDREXNOK	BIT(8)
 
 #define L2ESR_ACCESS_ERR_MASK	0xFFFC
+#define L2ESR_SOFT_ERR_MASK	(L2ESR_TSESB | L2ESR_TSEDB | L2ESR_DSESB | \
+				 L2ESR_DSEDB | L2ESR_MSE)
 
 #define L2ESR_CPU_MASK		0x0F
 #define L2ESR_CPU_SHIFT		16
@@ -133,6 +136,7 @@ struct msm_erp_dump_region {
 
 static DEFINE_PER_CPU(struct msm_l1_err_stats, msm_l1_erp_stats);
 static struct msm_l2_err_stats msm_l2_erp_stats;
+static unsigned int msm_l2_boot_l2esr;
 
 static int l1_erp_irq, l2_erp_irq;
 static struct proc_dir_entry *procfs_entry;
@@ -197,7 +201,8 @@ static int cache_erp_show(struct seq_file *m, void *v)
 			"L2 data soft errors, single-bit:\t%u\n"
 			"L2 data soft errors, double-bit:\t%u\n"
 			"L2 modified soft errors:\t\t%u\n"
-			"L2 master port LDREX NOK errors:\t%u\n",
+			"L2 master port LDREX NOK errors:\t%u\n"
+			"L2ESR latched before kernel init:\t0x%08x\n",
 			msm_l2_erp_stats.mpdcd,
 			msm_l2_erp_stats.mpslv,
 			msm_l2_erp_stats.tsesb,
@@ -205,7 +210,8 @@ static int cache_erp_show(struct seq_file *m, void *v)
 			msm_l2_erp_stats.dsesb,
 			msm_l2_erp_stats.dsedb,
 			msm_l2_erp_stats.mse,
-			msm_l2_erp_stats.mplxrexnok);
+			msm_l2_erp_stats.mplxrexnok,
+			msm_l2_boot_l2esr);
 
 	return 0;
 }
@@ -382,6 +388,36 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 #else
 	int l2_erp_print=1;
 #endif
+
+/*
+ * L2ESR keeps an error's bits until software writes them back, so it can
+ * hold a master port error latched by the reset and boot chain before the
+ * kernel ran. The machine's init_very_early hook calls this from setup_arch,
+ * after setup_processor() and the device-tree and early-parameter parsing,
+ * and before paging_init(), SMP preparation, any initcall, any SCM call and
+ * any device access. Its port error bits are recorded and cleared, which
+ * limits the L2 handler's counters and WARN to errors the kernel raises;
+ * the value stays readable in /proc/cpu/msm_cache_erp. A latched tag or
+ * data soft error keeps its bits and the CPU field that reports it for the
+ * handler, whose single- and double-bit policy applies.
+ */
+void __init msm_l2_boot_latch_record(void)
+{
+	unsigned int l2esr = get_l2_indirect_reg(L2ESR_IND_ADDR);
+	unsigned int soft = l2esr & L2ESR_SOFT_ERR_MASK;
+	unsigned int port = l2esr & ~L2ESR_SOFT_ERR_MASK &
+			    ~(L2ESR_CPU_MASK << L2ESR_CPU_SHIFT);
+
+	if (!port)
+		return;
+	pr_info("L2ESR latched before kernel init: L2ESR=0x%08x L2ESYNR0=0x%08x L2ESYNR1=0x%08x L2EAR0=0x%08x L2EAR1=0x%08x\n",
+		l2esr, get_l2_indirect_reg(L2ESYNR0_IND_ADDR),
+		get_l2_indirect_reg(L2ESYNR1_IND_ADDR),
+		get_l2_indirect_reg(L2EAR0_IND_ADDR),
+		get_l2_indirect_reg(L2EAR1_IND_ADDR));
+	set_l2_indirect_reg(L2ESR_IND_ADDR, soft ? port : l2esr);
+	msm_l2_boot_l2esr = l2esr;
+}
 
 static irqreturn_t msm_l2_erp_irq(int irq, void *dev_id)
 {

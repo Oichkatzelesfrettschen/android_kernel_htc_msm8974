@@ -17,6 +17,7 @@
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
 #include <linux/of.h>
+#include <linux/of_fdt.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/of_gpio.h>
@@ -799,6 +800,13 @@ void __init htc_8974_init(void)
 
 void __init htc_8974_init_very_early(void)
 {
+	/*
+	 * An m8whl enters the kernel with an L2 master port error latched on
+	 * every warm reset; other boards on this machine keep a pre-kernel
+	 * error for the L2 handler to count.
+	 */
+	if (of_flat_dt_is_compatible(of_get_flat_dt_root(), "htc,m8whl"))
+		msm_l2_boot_latch_record();
 	htc_8974_early_memory();
 }
 
