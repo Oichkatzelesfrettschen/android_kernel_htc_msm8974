@@ -24,6 +24,7 @@
 #include <mach/socinfo.h>
 #include <asm/cputype.h>
 #include "acpuclock.h"
+#include "devices.h"
 #include "clock-krait.h"
 #include <linux/regulator/krait-regulator.h>
 
@@ -391,15 +392,16 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 /*
  * L2ESR keeps an error's bits until software writes them back, so it can
  * hold a master port error latched by the boot chain before the kernel ran.
- * do_pre_smp_initcalls() runs an early_initcall before smp_init() and
- * before every driver initcall, so the value read here predates any access
- * the kernel's drivers make. Its port error bits are recorded and cleared,
- * which limits the L2 handler's counters and WARN to errors raised after
- * kernel init; the value stays readable in /proc/cpu/msm_cache_erp. A
- * latched tag or data soft error keeps its bits and the CPU field that
- * reports it for the handler, whose single- and double-bit policy applies.
+ * The machine's init_very_early hook calls this from setup_arch, after
+ * setup_processor() and before paging_init(), SMP preparation, any initcall
+ * and any SCM call, so the value read here predates every kernel access to
+ * the bus. Its port error bits are recorded and cleared, which limits the
+ * L2 handler's counters and WARN to errors the kernel raises; the value
+ * stays readable in /proc/cpu/msm_cache_erp. A latched tag or data soft
+ * error keeps its bits and the CPU field that reports it for the handler,
+ * whose single- and double-bit policy applies.
  */
-static int __init msm_l2_boot_latch_init(void)
+void __init msm_l2_boot_latch_record(void)
 {
 	unsigned int l2esr = get_l2_indirect_reg(L2ESR_IND_ADDR);
 	unsigned int soft = l2esr & L2ESR_SOFT_ERR_MASK;
@@ -407,7 +409,7 @@ static int __init msm_l2_boot_latch_init(void)
 			    ~(L2ESR_CPU_MASK << L2ESR_CPU_SHIFT);
 
 	if (!port)
-		return 0;
+		return;
 	pr_info("L2ESR latched before kernel init: L2ESR=0x%08x L2ESYNR0=0x%08x L2ESYNR1=0x%08x L2EAR0=0x%08x L2EAR1=0x%08x\n",
 		l2esr, get_l2_indirect_reg(L2ESYNR0_IND_ADDR),
 		get_l2_indirect_reg(L2ESYNR1_IND_ADDR),
@@ -415,9 +417,7 @@ static int __init msm_l2_boot_latch_init(void)
 		get_l2_indirect_reg(L2EAR1_IND_ADDR));
 	set_l2_indirect_reg(L2ESR_IND_ADDR, soft ? port : l2esr);
 	msm_l2_boot_l2esr = l2esr;
-	return 0;
 }
-early_initcall(msm_l2_boot_latch_init);
 
 static irqreturn_t msm_l2_erp_irq(int irq, void *dev_id)
 {

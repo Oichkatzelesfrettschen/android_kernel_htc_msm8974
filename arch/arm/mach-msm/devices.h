@@ -97,6 +97,12 @@ extern struct platform_device apq8064_slim_ctrl;
 extern struct platform_device apq8064_device_ssbi_pmic1;
 extern struct platform_device apq8064_device_ssbi_pmic2;
 extern struct platform_device apq8064_device_cache_erp;
+
+#ifdef CONFIG_MSM_CACHE_ERP
+void msm_l2_boot_latch_record(void);
+#else
+static inline void msm_l2_boot_latch_record(void) {}
+#endif
 extern struct platform_device apq8064_device_sata;
 
 extern struct platform_device msm9615_device_uart_gsbi4;

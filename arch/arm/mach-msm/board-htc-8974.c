@@ -799,6 +799,7 @@ void __init htc_8974_init(void)
 
 void __init htc_8974_init_very_early(void)
 {
+	msm_l2_boot_latch_record();
 	htc_8974_early_memory();
 }
 
