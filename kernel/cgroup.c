@@ -5361,39 +5361,41 @@ struct cgroup *cgroup_get_from_fd(int fd)
 }
 EXPORT_SYMBOL_GPL(cgroup_get_from_fd);
 
-static struct cgroupfs_root *findBpfCg(void){
-
-	struct cgroupfs_root *root;
-
-	for_each_active_root(root)
-		if(root->subsys_bits == 0)
-			return root;
-
-	return NULL;
-
-}
-
+/*
+ * Point a new socket at the calling task's cgroup in the cgroup2 compat
+ * hierarchy, the one cgroup-bpf programs attach to, and take a lifetime
+ * reference on it. Socket allocation may run in atomic context, so the
+ * lookup holds only rcu_read_lock(), which keeps the task's css_set alive,
+ * and css_set_lock, which keeps its cg_links list and every linked cgroup
+ * in place. A cgroup linked to a css_set still holds its base reference,
+ * and cgroup_kill_sb() unlinks the top cgroup under the same lock before
+ * dropping its base reference, so the hierarchy is resolved on every call
+ * and no root pointer outlives an unmount. A socket allocated in interrupt
+ * context belongs to no task and gets no cgroup.
+ */
 void cgroup_sk_alloc(struct cgroup **skcg)
 {
-	struct cgroup *cgrp;
-	static struct cgroupfs_root *bpfRoot = NULL;
+	struct cg_cgroup_link *link;
+	struct css_set *cg;
 
-	/* Don't associate the sock with unrelated interrupted task's cgroup. */
+	*skcg = NULL;
 	if (in_interrupt())
 		return;
 
-	if(bpfRoot == NULL)
-		bpfRoot = findBpfCg();
+	rcu_read_lock();
+	read_lock(&css_set_lock);
+	cg = rcu_dereference(current->cgroups);
+	list_for_each_entry(link, &cg->cg_links, cg_link_list) {
+		struct cgroup *cgrp = link->cgrp;
 
-	if(bpfRoot){
-		mutex_lock(&cgroup_mutex);
-		cgrp = task_cgroup_from_root(current, bpfRoot);
-		cgroup_get(cgrp);
-		mutex_unlock(&cgroup_mutex);
-		*skcg = cgrp;
+		if (!test_bit(ROOT_CGROUP2, &cgrp->root->flags))
+			continue;
+		if (cgroup_tryget(cgrp))
+			*skcg = cgrp;
+		break;
 	}
-	else
-		*skcg = NULL;
+	read_unlock(&css_set_lock);
+	rcu_read_unlock();
 }
 
 void cgroup_sk_clone(struct cgroup *skcg)
