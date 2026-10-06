@@ -176,11 +176,36 @@ cleanup:
 #define BPF_CGROUP_MAX_PROGS 64
 
 /*
+ * Pre-order successor of @pos within the subtree rooted at @top. Every
+ * cgroup's children and sibling lists change only under cgroup_mutex, so a
+ * caller holding it walks them without an RCU read-side section and may
+ * sleep between steps.
+ */
+static struct cgroup *next_subtree_cgroup(struct cgroup *pos,
+					  struct cgroup *top)
+{
+	if (!list_empty(&pos->children))
+		return list_first_entry(&pos->children, struct cgroup, sibling);
+
+	while (pos != top) {
+		if (!list_is_last(&pos->sibling, &pos->parent->children))
+			return list_entry(pos->sibling.next, struct cgroup,
+					  sibling);
+		pos = pos->parent;
+	}
+	return NULL;
+}
+
+/* Visits @top first, then every cgroup below it in pre-order. */
+#define for_each_subtree_cgroup(pos, top)				\
+	for (pos = (top); pos; pos = next_subtree_cgroup(pos, (top)))
+
+/*
  * Recompute and activate the effective arrays of @cgrp and of every cgroup
- * below it. cgroup_for_each_descendant_pre() starts at the first child, so
- * @cgrp itself is computed and activated before the walk. All arrays are
- * allocated before any is activated, so an allocation failure leaves every
- * cgroup on its previous array. Called with cgroup_mutex and rcu_read_lock().
+ * below it. All arrays are allocated with GFP_KERNEL before any is
+ * activated, so an allocation failure leaves every cgroup on its previous
+ * array. Called with cgroup_mutex held and outside any RCU read-side
+ * section.
  */
 static int update_effective_progs(struct cgroup *cgrp,
 				  enum bpf_attach_type type)
@@ -188,27 +213,22 @@ static int update_effective_progs(struct cgroup *cgrp,
 	struct cgroup *desc;
 	int err;
 
-	err = compute_effective_progs(cgrp, type, &cgrp->bpf.inactive);
-	if (err)
-		return err;
-	cgroup_for_each_descendant_pre(desc, cgrp) {
+	WARN_ON_ONCE(!cgroup_lock_is_held());
+
+	for_each_subtree_cgroup(desc, cgrp) {
 		err = compute_effective_progs(desc, type, &desc->bpf.inactive);
 		if (err)
 			goto cleanup;
 	}
 
-	activate_effective_progs(cgrp, type, cgrp->bpf.inactive);
-	cgrp->bpf.inactive = NULL;
-	cgroup_for_each_descendant_pre(desc, cgrp) {
+	for_each_subtree_cgroup(desc, cgrp) {
 		activate_effective_progs(desc, type, desc->bpf.inactive);
 		desc->bpf.inactive = NULL;
 	}
 	return 0;
 
 cleanup:
-	bpf_prog_array_free(cgrp->bpf.inactive);
-	cgrp->bpf.inactive = NULL;
-	cgroup_for_each_descendant_pre(desc, cgrp) {
+	for_each_subtree_cgroup(desc, cgrp) {
 		bpf_prog_array_free(desc->bpf.inactive);
 		desc->bpf.inactive = NULL;
 	}
@@ -281,9 +301,7 @@ int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 	old_flags = cgrp->bpf.flags[type];
 	cgrp->bpf.flags[type] = flags;
 
-	rcu_read_lock();
 	err = update_effective_progs(cgrp, type);
-	rcu_read_unlock();
 	if (err)
 		goto cleanup;
 
@@ -357,9 +375,7 @@ int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 		pl->prog = NULL;
 	}
 
-	rcu_read_lock();
 	err = update_effective_progs(cgrp, type);
-	rcu_read_unlock();
 	if (err)
 		goto cleanup;
 
