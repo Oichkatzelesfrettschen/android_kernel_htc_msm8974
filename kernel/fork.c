@@ -405,7 +405,12 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 			goto fail_nomem_policy;
 		vma_set_policy(tmp, pol);
 		tmp->vm_mm = mm;
-		if (anon_vma_fork(tmp, mpnt))
+		if (tmp->vm_flags & VM_WIPEONFORK) {
+			/* VM_WIPEONFORK gets a clean slate in the child. */
+			tmp->anon_vma = NULL;
+			if (anon_vma_prepare(tmp))
+				goto fail_nomem_anon_vma_fork;
+		} else if (anon_vma_fork(tmp, mpnt))
 			goto fail_nomem_anon_vma_fork;
 		tmp->vm_flags &= ~VM_LOCKED;
 		tmp->vm_next = tmp->vm_prev = NULL;
@@ -449,10 +454,8 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 
 		mm->map_count++;
 		/*
-		 * VM_WIPEONFORK vmas start with no pages in the child: the
-		 * child anon_vma has no ptes yet, so the first access after
-		 * fork takes a fresh anonymous fault instead of inheriting
-		 * the parent's data through copy-on-write.
+		 * retval still holds PTR_ERR() of the duplicated mempolicy,
+		 * so a wiped vma sets it explicitly.
 		 */
 		if (!(tmp->vm_flags & VM_WIPEONFORK))
 			retval = copy_page_range(mm, oldmm, mpnt);
