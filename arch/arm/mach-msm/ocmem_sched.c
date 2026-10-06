@@ -185,11 +185,6 @@ static inline int is_iface_access(int id)
 	return ocmem_client_table[id].hw_interconnect == OCMEM_OCMEMNOC ? 1 : 0;
 }
 
-static inline int is_remapped_access(int id)
-{
-	return ocmem_client_table[id].hw_interconnect == OCMEM_SYSNOC ? 1 : 0;
-}
-
 static inline int is_blocked(int id)
 {
 	return ocmem_client_table[id].hw_interconnect == OCMEM_BLOCKED ? 1 : 0;

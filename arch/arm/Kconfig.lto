@@ -1,0 +1,76 @@
+#
+# Clang link-time optimization for the HTC One M8 kernel.
+#
+# Kconfig in this tree cannot probe the toolchain, so the top-level Makefile
+# rejects an LTO configuration unless CC is Clang, LD is LLD, NM and AR are
+# the LLVM tools, and the integrated assembler is in use.
+#
+# The image links vmlinux only: loadable modules and the mcount records of
+# the function tracer have no LTO link step here, so both stay excluded.
+#
+
+menu "Link-time optimization"
+	depends on MACH_M8
+
+config LTO
+	bool
+	help
+	  Selected when the kernel is built with the compiler's link-time
+	  optimization.
+
+config LTO_CLANG
+	bool
+	select LTO
+	help
+	  Selected when the kernel is built with Clang link-time
+	  optimization. Compiled C objects hold LLVM bitcode, and one
+	  relocatable LLD link turns all of vmlinux into native code.
+
+choice
+	prompt "Link-time optimization (LTO)"
+	default LTO_NONE
+	help
+	  Selects whether Clang compiles C files to LLVM bitcode and
+	  optimizes the kernel across translation units at link time.
+
+	  If unsure, select LTO_NONE.
+
+config LTO_NONE
+	bool "None"
+	help
+	  Build the kernel without link-time optimization.
+
+config LTO_CLANG_FULL
+	bool "Clang Full LTO"
+	depends on !MODULES && !FUNCTION_TRACER
+	select LTO_CLANG
+	help
+	  Merge the bitcode of every vmlinux object into one module, optimize
+	  it as a whole, and generate code in one LLD backend thread. This
+	  uses more memory and time at link than ThinLTO.
+
+	  The build requires CC=clang, LD=ld.lld, AR=llvm-ar, NM=llvm-nm and
+	  the integrated assembler.
+
+config LTO_CLANG_THIN
+	bool "Clang ThinLTO"
+	depends on !MODULES && !FUNCTION_TRACER
+	select LTO_CLANG
+	help
+	  Optimize each translation unit with summaries of the others,
+	  import functions across units, and generate code in parallel
+	  LLD backend threads. The link caches backend output in
+	  .thinlto-cache in the object tree.
+
+	  The build requires CC=clang, LD=ld.lld, AR=llvm-ar, NM=llvm-nm and
+	  the integrated assembler.
+
+endchoice
+
+config THINLTO
+	def_bool LTO_CLANG_THIN
+	help
+	  Alias of LTO_CLANG_THIN for build systems that set THINLTO
+	  together with it, such as vendor/lineage kernel.mk.
+
+endmenu

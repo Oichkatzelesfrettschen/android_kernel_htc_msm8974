@@ -106,7 +106,7 @@ static int read_symbol_tr(const char *sym, unsigned long long addr)
 static int read_symbol(FILE *in, struct sym_entry *s)
 {
 	char str[500];
-	char *sym, stype;
+	char *sym, *p, stype;
 	int rc;
 
 	rc = fscanf(in, "%llx %c %499s\n", &s->addr, &stype, str);
@@ -115,6 +115,17 @@ static int read_symbol(FILE *in, struct sym_entry *s)
 			fprintf(stderr, "Read error or end of file.\n");
 		return -1;
 	}
+
+	/*
+	 * ThinLTO promotes a static symbol that another translation unit
+	 * imports and appends ".llvm.<hash>" to keep the promoted name unique.
+	 * The table records the source name, so /proc/kallsyms, backtraces
+	 * and kallsyms_lookup_name() see the same names as a non-LTO kernel.
+	 * '.' never occurs in a C identifier.
+	 */
+	p = strstr(str, ".llvm.");
+	if (p)
+		*p = '\0';
 
 	sym = str;
 	/* skip prefix char */

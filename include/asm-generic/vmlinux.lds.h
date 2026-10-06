@@ -60,6 +60,22 @@
 #define VMLINUX_SYMBOL(sym) PASTE(SYMBOL_PREFIX, sym)
 #endif
 
+#ifdef CONFIG_LTO_CLANG
+/*
+ * LLD emits every function and object of an LTO link in a section of its
+ * own (.text.<name>, .data.<name>, .bss.<name>), so the main input patterns
+ * gather those sections too. A name after one dot is compiler generated;
+ * the kernel's own special sections use two dots and keep their rules.
+ */
+#define TEXT_MAIN .text .text.[0-9a-zA-Z_]*
+#define DATA_MAIN .data .data.[0-9a-zA-Z_]* .data..L* .data..compoundliteral*
+#define BSS_MAIN .bss .bss.[0-9a-zA-Z_]* .bss..compoundliteral*
+#else
+#define TEXT_MAIN .text
+#define DATA_MAIN .data
+#define BSS_MAIN .bss
+#endif
+
 /* Align . to a 8 byte boundary equals to maximum function alignment. */
 #define ALIGN_FUNCTION()  . = ALIGN(8)
 
@@ -158,7 +174,7 @@
 
 /* .data section */
 #define DATA_DATA							\
-	*(.data)							\
+	*(DATA_MAIN)							\
 	*(.ref.data)							\
 	*(.data..shared_aligned) /* percpu related */			\
 	DEV_KEEP(init.data)						\
@@ -392,8 +408,8 @@
  * during second ld run in second ld pass when generating System.map */
 #define TEXT_TEXT							\
 		ALIGN_FUNCTION();					\
-		*(.text.hot)						\
-		*(.text)						\
+		*(.text.hot .text.hot.*)				\
+		*(TEXT_MAIN)						\
 		*(.ref.text)						\
 	DEV_KEEP(init.text)						\
 	DEV_KEEP(exit.text)						\
@@ -401,7 +417,7 @@
 	CPU_KEEP(exit.text)						\
 	MEM_KEEP(init.text)						\
 	MEM_KEEP(exit.text)						\
-		*(.text.unlikely)
+		*(.text.unlikely .text.unlikely.*)
 
 
 /* sched.text is aling to function alignment to secure we have same
@@ -535,7 +551,7 @@
 	.bss : AT(ADDR(.bss) - LOAD_OFFSET) {				\
 		*(.bss..page_aligned)					\
 		*(.dynbss)						\
-		*(.bss)							\
+		*(BSS_MAIN)						\
 		*(COMMON)						\
 	}
 

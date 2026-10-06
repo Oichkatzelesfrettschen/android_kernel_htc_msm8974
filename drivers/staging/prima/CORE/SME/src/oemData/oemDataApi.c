@@ -362,7 +362,7 @@ eHalStatus sme_HandleOemDataRsp(tHalHandle hHal, tANI_U8* pMsg)
             break;
         }
 
-        oemData_ReleaseOemDataReqCommand(pMac, pCommand, eHAL_STATUS_SUCCESS);
+        oemData_ReleaseOemDataReqCommand(pMac, pCommand, eOEM_DATA_REQ_SUCCESS);
         pMac->oemData.oemDataReqActive = eANI_BOOLEAN_FALSE;
 
     } while(0);

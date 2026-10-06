@@ -611,7 +611,7 @@ eHalStatus sapCheckHT40SecondaryIsNotAllowed(ptSapContext psapCtx)
 
     for (i = 0; i < unsafeChannelCount; i++)
     {
-        if ((psapCtx->sap_sec_chan == unsafeChannelList[i]))
+        if (psapCtx->sap_sec_chan == unsafeChannelList[i])
         {
             VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
                 FL("Unsafe Channel %d SAP Secondary Channel: %d"),
@@ -825,95 +825,87 @@ eHalStatus sapCheck40Mhz24G(tHalHandle halHandle, ptSapContext psapCtx,
             goto NextResult;
         }
 
-        if ((pScanResult->BssDescriptor.ieFields != NULL))
-        {
-            ieLen = (pScanResult->BssDescriptor.length + sizeof(tANI_U16));
-            ieLen += (sizeof(tANI_U32) - sizeof(tSirBssDescription));
-            vos_mem_set((tANI_U8 *) pBeaconStruct,
-                               sizeof(tSirProbeRespBeacon), 0);
+        ieLen = (pScanResult->BssDescriptor.length + sizeof(tANI_U16));
+        ieLen += (sizeof(tANI_U32) - sizeof(tSirBssDescription));
+        vos_mem_set((tANI_U8 *) pBeaconStruct,
+                           sizeof(tSirProbeRespBeacon), 0);
 
-            if ((eSIR_SUCCESS == sirParseBeaconIE(pMac, pBeaconStruct,
-                     (tANI_U8 *)( pScanResult->BssDescriptor.ieFields), ieLen)))
+        if ((eSIR_SUCCESS == sirParseBeaconIE(pMac, pBeaconStruct,
+                 (tANI_U8 *)( pScanResult->BssDescriptor.ieFields), ieLen)))
+        {
+            /* Check Peer BSS is HT20 or Legacy AP */
+            if (eHAL_STATUS_SUCCESS !=
+                      sapCheckFor20MhzObss(channelNumber, pBeaconStruct,
+                                                                psapCtx))
             {
-                /* Check Peer BSS is HT20 or Legacy AP */
-                if (eHAL_STATUS_SUCCESS !=
-                          sapCheckFor20MhzObss(channelNumber, pBeaconStruct,
-                                                                    psapCtx))
+                VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
+                          FL("Overlapping 20 MHz BSS is found"));
+                vos_mem_free(pBeaconStruct);
+                return halStatus;
+            }
+
+            sapGetPrimarySecondaryChannelOfBss(pBeaconStruct,
+                                            &pri_chan, &sec_chan);
+
+            /* Check peer BSS Operating channel is not within OBSS affected
+             * channel range
+             */
+            if ((pri_chan < psapCtx->affected_start
+                || pri_chan > psapCtx->affected_end)
+               && (sec_chan < psapCtx->affected_start
+                || sec_chan > psapCtx->affected_end))
+            {
+                VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
+                 FL("Peer BSS: %s Primary & Secondary Channel [%d %d]"
+                    "is out of affected Range: [%d %d]"),
+                 pBeaconStruct->ssId.ssId, pri_chan, sec_chan,
+                 psapCtx->affected_start, psapCtx->affected_end);
+                goto NextResult; /* not within affected channel range */
+            }
+
+            VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
+             FL("Neighboring BSS: %s Primary & Secondary Channel [%d %d]"),
+             pBeaconStruct->ssId.ssId, pri_chan, sec_chan);
+
+            if (sec_chan)
+            {
+                /* Peer BSS is HT40 capable then check peer BSS
+                 * primary & secondary channel with SAP
+                 * Primary & Secondary channel.
+                 */
+                if ((psapCtx->channel !=  pri_chan)
+                   || (psapCtx->sap_sec_chan != sec_chan))
                 {
                     VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                              FL("Overlapping 20 MHz BSS is found"));
+                              FL("40 MHz Pri/Sec channel : [%d %d]"
+                              " missmatch with  BSS: %s"
+                              " Pri/Sec channel : [%d %d]"),
+                              psapCtx->channel, psapCtx->sap_sec_chan,
+                              pBeaconStruct->ssId.ssId, pri_chan, sec_chan);
+                     vos_mem_free(pBeaconStruct);
+                     return halStatus;
+                }
+            }
+
+            if (pBeaconStruct->HTCaps.present)
+            {
+                /* Check Peer BSS HT capablity has 40MHz Intolerant bit */
+                if (pBeaconStruct->HTCaps.stbcControlFrame)
+                {
+                    VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
+                                  FL("Found BSS: %s with 40 MHz"
+                                  "Intolerant is set on Channel : %d"),
+                                  pBeaconStruct->ssId.ssId,
+                                  channelNumber);
                     vos_mem_free(pBeaconStruct);
                     return halStatus;
                 }
-
-                sapGetPrimarySecondaryChannelOfBss(pBeaconStruct,
-                                                &pri_chan, &sec_chan);
-
-                /* Check peer BSS Operating channel is not within OBSS affected
-                 * channel range
-                 */
-                if ((pri_chan < psapCtx->affected_start
-                    || pri_chan > psapCtx->affected_end)
-                   && (sec_chan < psapCtx->affected_start
-                    || sec_chan > psapCtx->affected_end))
-                {
-                    VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                     FL("Peer BSS: %s Primary & Secondary Channel [%d %d]"
-                        "is out of affected Range: [%d %d]"),
-                     pBeaconStruct->ssId.ssId, pri_chan, sec_chan,
-                     psapCtx->affected_start, psapCtx->affected_end);
-                    goto NextResult; /* not within affected channel range */
-                }
-
-                VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                 FL("Neighboring BSS: %s Primary & Secondary Channel [%d %d]"),
-                 pBeaconStruct->ssId.ssId, pri_chan, sec_chan);
-
-                if (sec_chan)
-                {
-                    /* Peer BSS is HT40 capable then check peer BSS
-                     * primary & secondary channel with SAP
-                     * Primary & Secondary channel.
-                     */
-                    if ((psapCtx->channel !=  pri_chan)
-                       || (psapCtx->sap_sec_chan != sec_chan))
-                    {
-                        VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                                  FL("40 MHz Pri/Sec channel : [%d %d]"
-                                  " missmatch with  BSS: %s"
-                                  " Pri/Sec channel : [%d %d]"),
-                                  psapCtx->channel, psapCtx->sap_sec_chan,
-                                  pBeaconStruct->ssId.ssId, pri_chan, sec_chan);
-                         vos_mem_free(pBeaconStruct);
-                         return halStatus;
-                    }
-                }
-
-                if (pBeaconStruct->HTCaps.present)
-                {
-                    /* Check Peer BSS HT capablity has 40MHz Intolerant bit */
-                    if (pBeaconStruct->HTCaps.stbcControlFrame)
-                    {
-                        VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_INFO,
-                                      FL("Found BSS: %s with 40 MHz"
-                                      "Intolerant is set on Channel : %d"),
-                                      pBeaconStruct->ssId.ssId,
-                                      channelNumber);
-                        vos_mem_free(pBeaconStruct);
-                        return halStatus;
-                    }
-                }
-            }
-            else
-            {
-                VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_ERROR,
-                          FL("Failed to Parse the Beacon IEs"));
             }
         }
         else
         {
             VOS_TRACE(VOS_MODULE_ID_SAP, VOS_TRACE_LEVEL_ERROR,
-                       FL("BSS IEs Failed is NULL in Scan"));
+                      FL("Failed to Parse the Beacon IEs"));
         }
 
 NextResult:

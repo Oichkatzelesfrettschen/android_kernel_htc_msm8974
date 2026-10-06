@@ -302,6 +302,7 @@ static void acm_ctrl_irq(struct urb *urb)
 	struct usb_cdc_notification *dr = urb->transfer_buffer;
 	struct tty_struct *tty;
 	unsigned char *data;
+	unsigned int data_length;
 	int newctrl;
 	int retval;
 	int status = urb->status;
@@ -327,6 +328,17 @@ static void acm_ctrl_irq(struct urb *urb)
 
 	usb_mark_last_busy(acm->dev);
 
+	if (urb->actual_length < sizeof(*dr)) {
+		dev_dbg(&acm->control->dev, "notification header too short\n");
+		goto exit;
+	}
+
+	data_length = urb->actual_length - sizeof(*dr);
+	if (le16_to_cpu(dr->wLength) > data_length) {
+		dev_dbg(&acm->control->dev, "notification payload too short\n");
+		goto exit;
+	}
+
 	data = (unsigned char *)(dr + 1);
 	switch (dr->bNotificationType) {
 	case USB_CDC_NOTIFY_NETWORK_CONNECTION:
@@ -335,6 +347,10 @@ static void acm_ctrl_irq(struct urb *urb)
 		break;
 
 	case USB_CDC_NOTIFY_SERIAL_STATE:
+		if (le16_to_cpu(dr->wLength) < sizeof(__le16)) {
+			dev_dbg(&acm->control->dev, "serial state too short\n");
+			break;
+		}
 		tty = tty_port_tty_get(&acm->port);
 		newctrl = get_unaligned_le16(data);
 
@@ -366,10 +382,10 @@ static void acm_ctrl_irq(struct urb *urb)
 	default:
 		dev_dbg(&acm->control->dev,
 			"%s - unknown notification %d received: index %d "
-			"len %d data0 %d data1 %d\n",
+			"len %d\n",
 			__func__,
 			dr->bNotificationType, dr->wIndex,
-			dr->wLength, data[0], data[1]);
+			dr->wLength);
 		break;
 	}
 exit:

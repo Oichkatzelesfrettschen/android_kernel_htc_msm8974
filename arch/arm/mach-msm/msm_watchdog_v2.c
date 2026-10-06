@@ -25,6 +25,7 @@
 #include <linux/of.h>
 #include <linux/cpu.h>
 #include <linux/platform_device.h>
+#include <asm/irq_regs.h>
 #include <mach/scm.h>
 #include <mach/msm_memory_dump.h>
 
@@ -139,6 +140,13 @@ static void dump_cpu_alive_mask(struct msm_watchdog_data *wdog_dd)
 	cpulist_scnprintf(alive_mask_buf, MASK_SIZE,
 						&wdog_dd->alive_mask);
 	printk(KERN_INFO "cpu alive mask from last pet %s\n", alive_mask_buf);
+}
+
+static void dump_cpu_online_mask(void)
+{
+	static char online_mask_buf[MASK_SIZE];
+	cpulist_scnprintf(online_mask_buf, MASK_SIZE, cpu_online_mask);
+	printk(KERN_INFO "cpu online mask %s\n", online_mask_buf);
 }
 
 static int msm_watchdog_do_suspend(void __iomem *base)
@@ -407,6 +415,24 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 		wdog_dd->last_pet, nanosec_rem / 1000);
 	if (wdog_dd->do_ipi_ping)
 		dump_cpu_alive_mask(wdog_dd);
+
+	/*
+	 * alive_mask names only who answered the last successful IPI ping;
+	 * it cannot tell a cleanly offlined CPU from one stuck mid-hotplug
+	 * or starved of the run queue on the pet workqueue's own CPU. Print
+	 * the current online mask plus this CPU's interrupted context so a
+	 * bite this driver cannot prevent still leaves a decisive log:
+	 * an offline reading has the missing CPUs absent from online_mask
+	 * too; a run-queue starvation reading has a SCHED_FIFO/RR task
+	 * other than this bark IRQ sitting in current on the pet
+	 * workqueue's CPU (CPU0, via queue_delayed_work_on(0, ...)).
+	 */
+	dump_cpu_online_mask();
+	printk(KERN_INFO "cpu%d current: %s pid=%d policy=%u prio=%d\n",
+		smp_processor_id(), current->comm, current->pid,
+		current->policy, current->prio);
+	show_regs(get_irq_regs());
+
 	printk(KERN_INFO "Causing a watchdog bite!");
 	__raw_writel(1, wdog_dd->base + WDT0_BITE_TIME);
 	mb();

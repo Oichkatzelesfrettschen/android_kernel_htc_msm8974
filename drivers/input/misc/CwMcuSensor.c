@@ -36,6 +36,20 @@
 #define RETRY_TIMES 20
 #define ACTIVE_RETRY_TIMES 10
 #define ENABLE_LIST_RETRY_TIMES 5
+
+/*
+ * The hub raises the Significant Motion interrupt within tens of milliseconds
+ * of an enable-register write that arms the detector, with the device still,
+ * on the enables that follow an arm period that ended without a trigger. An
+ * interrupt inside SMD_ARM_BLANK_MS of arming is that arming artifact: it is
+ * cleared without a report and the detector is re-armed by writing its enable
+ * bit cleared and then set SMD_REARM_GAP_MS apart, the sequence the hub arms
+ * from without raising the interrupt. SMD_ARM_RETRIES bounds the re-arms per
+ * enable.
+ */
+#define SMD_ARM_BLANK_MS 100
+#define SMD_REARM_GAP_MS 5
+#define SMD_ARM_RETRIES 2
 #define DPS_MAX			(1 << (16 - 1))
 
 #define CWMCU_POLL_INTERVAL	10
@@ -172,6 +186,8 @@ struct CWMCU_data {
 	u8  gy_calibrated;
 
 	u8 filter_first_zeros[numSensors];
+	unsigned long smd_blank_until;
+	int smd_rearms;
 	int mfg_mode;
 #if defined(CONFIG_FB)
 	struct notifier_block fb_notif;
@@ -1226,15 +1242,62 @@ int touch_status(u8 status){
 }
 #endif
 
+/* Serializes enabled_list updates with the enable-register writes that carry them. */
+static DEFINE_MUTEX(enable_lock);
+
+static void write_enable_reg(struct CWMCU_data *sensor, u8 i)
+{
+	int retry;
+	int rc;
+	u8 data = (u8)(sensor->enabled_list >> (i * 8));
+
+	for (retry = 0; retry < ENABLE_LIST_RETRY_TIMES; retry++) {
+		u8 confirm_data;
+
+		rc = CWMCU_i2c_write(sensor, CWSTM32_ENABLE_REG+i, &data, 1);
+		if (rc)
+			pr_err("%s: CWMCU_i2c_write fails, rc = %d, retry = %d\n",
+					__func__, rc, retry);
+
+		rc = CWMCU_i2c_read(sensor, CWSTM32_ENABLE_REG+i, &confirm_data, 1);
+		if (rc < 0)
+			pr_err("%s: CWMCU_i2c_read fails, rc = %d, retry = %d\n",
+					__func__, rc, retry);
+
+		pr_debug("%s: confirm_data = 0x%x, compare_data = 0x%x, retry = %d\n",
+				__func__, confirm_data, data, retry);
+
+		if (confirm_data == data)
+			break;
+		else
+			pr_err("%s: read and write mis-match, confirm_data = 0x%x, compare_data = 0x%x, retry = %d\n",
+					__func__, confirm_data, data, retry);
+	}
+}
+
+static void rearm_significant_motion(struct CWMCU_data *sensor)
+{
+	u8 i = Significant_Motion / 8;
+
+	mutex_lock(&enable_lock);
+	if (sensor->enabled_list & (1 << Significant_Motion)) {
+		sensor->enabled_list &= ~(1 << Significant_Motion);
+		write_enable_reg(sensor, i);
+		msleep(SMD_REARM_GAP_MS);
+		sensor->enabled_list |= 1 << Significant_Motion;
+		sensor->smd_blank_until = jiffies + msecs_to_jiffies(SMD_ARM_BLANK_MS);
+		write_enable_reg(sensor, i);
+	}
+	mutex_unlock(&enable_lock);
+}
+
 static int active_set(struct device *dev,struct device_attribute *attr,const char *buf, size_t count)
 {
 	int enabled = 0;
 	int sensors_id = 0;
 
-	u8 data;
 	u8 i;
 	int retry = 0;
-	int rc = 0;
 	u8 data8[34] = {0};
 
 	for (retry = 0; retry < ACTIVE_RETRY_TIMES; retry++) {
@@ -1305,35 +1368,17 @@ static int active_set(struct device *dev,struct device_attribute *attr,const cha
 		mcu_data->filter_first_zeros[sensors_id] = 1;
 	}
 
+	mutex_lock(&enable_lock);
+	if ((sensors_id == Significant_Motion) && (enabled == 1)) {
+		mcu_data->smd_rearms = 0;
+		mcu_data->smd_blank_until = jiffies + msecs_to_jiffies(SMD_ARM_BLANK_MS);
+	}
 	mcu_data->enabled_list &= ~(1<<sensors_id);
 	mcu_data->enabled_list |= ((uint32_t)enabled)<<sensors_id;
 
 	i = sensors_id /8;
-	data = (u8)(mcu_data->enabled_list>>(i*8));
-
-	for (retry = 0; retry < ENABLE_LIST_RETRY_TIMES; retry++) {
-		u8 confirm_data;
-		u8 compare_data = (u8)(mcu_data->enabled_list>>(i*8));
-
-		rc = CWMCU_i2c_write(mcu_data, CWSTM32_ENABLE_REG+i, &data,1);
-		if (rc)
-			pr_err("%s: CWMCU_i2c_write fails, rc = %d, retry = %d\n",
-					__func__, rc, retry);
-
-		rc = CWMCU_i2c_read(mcu_data, CWSTM32_ENABLE_REG+i, &confirm_data, 1);
-		if (rc < 0)
-			pr_err("%s: CWMCU_i2c_read fails, rc = %d, retry = %d\n",
-					__func__, rc, retry);
-
-		pr_debug("%s: confirm_data = 0x%x, compare_data = 0x%x, retry = %d\n",
-				__func__, confirm_data, compare_data, retry);
-
-		if (confirm_data == compare_data)
-			break;
-		else
-			pr_err("%s: read and write mis-match, confirm_data = 0x%x, compare_data = 0x%x, retry = %d\n",
-					__func__, confirm_data, compare_data, retry);
-	}
+	write_enable_reg(mcu_data, i);
+	mutex_unlock(&enable_lock);
 
 	if ((mcu_data->input != NULL) && (sensors_id == Proximity) && (enabled == 1)) {
 		input_report_abs(mcu_data->input, ABS_DISTANCE, -1);
@@ -2494,17 +2539,29 @@ static void cwmcu_irq_work_func(struct work_struct *work)
 	}
 
 	if (INT_st3 & CW_MCU_INT_BIT_SIGNIFICANT_MOTION) {
+		bool arming_artifact = false;
+
 		if (sensor->enabled_list & (1<<Significant_Motion)) {
-			sensor->sensors_time[Significant_Motion] = 0;
+			arming_artifact = time_before(jiffies, sensor->smd_blank_until) &&
+					sensor->smd_rearms < SMD_ARM_RETRIES;
+			if (arming_artifact) {
+				sensor->smd_rearms++;
+				pr_info("%s: Significant Motion interrupt inside the arming window, re-arm %d\n",
+						__func__, sensor->smd_rearms);
+			} else {
+				sensor->sensors_time[Significant_Motion] = 0;
 
-			wake_lock_timeout(&significant_wake_lock, 1 * HZ);
-			input_report_rel(sensor->input,	REL_Significant_Motion, 1);
-			input_sync(sensor->input);
+				wake_lock_timeout(&significant_wake_lock, 1 * HZ);
+				input_report_rel(sensor->input,	REL_Significant_Motion, 1);
+				input_sync(sensor->input);
 
-			pr_debug("%s: Significant Motion interrupt occurs!!\n", __func__);
+				pr_debug("%s: Significant Motion interrupt occurs!!\n", __func__);
+			}
 		}
 		clear_intr = CW_MCU_INT_BIT_SIGNIFICANT_MOTION;
 		ret = CWMCU_i2c_write(sensor, CWSTM32_INT_ST3, &clear_intr, 1);
+		if (arming_artifact)
+			rearm_significant_motion(sensor);
 	}
 
 	if (INT_st3 & CW_MCU_INT_BIT_STEP_DETECTOR) {

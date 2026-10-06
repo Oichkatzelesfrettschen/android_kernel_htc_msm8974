@@ -2364,8 +2364,8 @@ static int msm_spi_setup(struct spi_device *spi)
 		msm_spi_pm_resume_runtime(dd->dev);
 
 	if (dd->suspended) {
-		mutex_unlock(&dd->core_lock);
-		return -EBUSY;
+		rc = -EBUSY;
+		goto no_resources;
 	}
 
 	if (dd->pdata->is_shared) {
@@ -3408,6 +3408,7 @@ static int msm_spi_pm_resume_runtime(struct device *device)
 	struct platform_device *pdev = to_platform_device(device);
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct msm_spi	  *dd;
+	int ret;
 
 	dev_dbg(device, "pm_runtime: resuming...\n");
 	if (!master)
@@ -3418,9 +3419,22 @@ static int msm_spi_pm_resume_runtime(struct device *device)
 
 	if (!dd->suspended)
 		return 0;
-	
-	if (!dd->pdata->is_shared)
-		get_local_resources(dd);
+
+	/*
+	 * A failed acquisition leaves dd->suspended set: setup and transfers
+	 * refuse the controller, the paired runtime suspend returns before
+	 * put_local_resources() and so releases nothing this resume did not
+	 * take. The callback returns 0 because rpm_callback() latches any
+	 * error in power.runtime_error, after which rpm_resume() refuses every
+	 * later resume. The device reads RPM_ACTIVE until its usage count
+	 * drops and autosuspend runs the suspend callback; the next runtime
+	 * resume after that retries the acquisition.
+	 */
+	if (!dd->pdata->is_shared) {
+		ret = get_local_resources(dd);
+		if (ret)
+			return 0;
+	}
 	msm_spi_clk_path_init(dd);
 	if (!dd->pdata->active_only)
 		msm_spi_clk_path_vote(dd);

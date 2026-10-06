@@ -178,7 +178,7 @@ static VOS_STATUS WDA_ProcessUpdateScanParams(tWDA_CbContext *pWDA, tSirUpdateSc
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
 VOS_STATUS WDA_ProcessRoamScanOffloadReq(tWDA_CbContext *pWDA,tSirRoamOffloadScanReq *pRoamOffloadScanReqParams);
 void WDA_RoamOffloadScanReqCallback(WDI_Status status, void* pUserData);
-void WDA_ConvertSirAuthToWDIAuth(WDI_AuthType *AuthType, v_U8_t csrAuthType);
+void WDA_ConvertSirAuthToWDIAuth(wpt_uint32 *AuthType, v_U8_t csrAuthType);
 void WDA_ConvertSirEncToWDIEnc(WDI_EdType *EncrType, v_U8_t csrEncrType);
 #endif
 #ifdef WLAN_FEATURE_PACKET_FILTERING
@@ -13511,7 +13511,7 @@ VOS_STATUS WDA_TxPacket(tWDA_CbContext *pWDA,
 
    /* Divert Disassoc/Deauth frames thru self station, as by the time unicast
       disassoc frame reaches the HW, HAL has already deleted the peer station */
-   if ((pFc->type == SIR_MAC_MGMT_FRAME))
+   if (pFc->type == SIR_MAC_MGMT_FRAME)
    {
        if ((pFc->subType == SIR_MAC_MGMT_REASSOC_RSP) ||
                (pFc->subType == SIR_MAC_MGMT_PROBE_REQ))
@@ -14840,19 +14840,16 @@ void WDA_lowLevelIndCallback(WDI_LowLevelIndType *wdiLowLevelInd,
          if (SIR_COEX_IND_TYPE_CXM_FEATURES_NOTIFICATION ==
                 wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndType)
          {
-            if(wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData)
-            {
-                VOS_TRACE(VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
-                  FL("Coex state: 0x%x coex feature: 0x%x"),
-                  wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[0],
-                  wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[1]);
+            VOS_TRACE(VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR,
+              FL("Coex state: 0x%x coex feature: 0x%x"),
+              wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[0],
+              wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[1]);
 
-                 if (wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[2] << 16)
-                 {
-                     VOS_TRACE(VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR, FL("power limit: 0x%x"),
-                     (tANI_U16)(wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[2]));
-                 }
-            }
+             if (wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[2] << 16)
+             {
+                 VOS_TRACE(VOS_MODULE_ID_WDA, VOS_TRACE_LEVEL_ERROR, FL("power limit: 0x%x"),
+                 (tANI_U16)(wdiLowLevelInd->wdiIndicationData.wdiCoexInfo.coexIndData[2]));
+             }
             break;
          }
 
@@ -16408,7 +16405,7 @@ VOS_STATUS WDA_ProcessSetPrefNetworkReq(tWDA_CbContext *pWDA,
 
 #ifdef WLAN_FEATURE_ROAM_SCAN_OFFLOAD
 
-void WDA_ConvertSirAuthToWDIAuth(WDI_AuthType *AuthType, v_U8_t csrAuthType)
+void WDA_ConvertSirAuthToWDIAuth(wpt_uint32 *AuthType, v_U8_t csrAuthType)
 {
    /*Convert the CSR Auth types to WDI Auth types */
    switch (csrAuthType)
@@ -18014,7 +18011,7 @@ void WDA_TransportChannelDebug
     NONE
 
 ===========================================================================*/
-void WDA_TransportKickDxe()
+void WDA_TransportKickDxe(void)
 {
    WDI_TransportKickDxe();
    return;

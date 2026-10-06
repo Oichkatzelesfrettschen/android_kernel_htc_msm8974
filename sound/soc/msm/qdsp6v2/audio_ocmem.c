@@ -178,7 +178,7 @@ static int audio_ocmem_client_cb(struct notifier_block *this,
 		break;
 	case OCMEM_ALLOC_GROW:
 		rbuf = data;
-		if ((rbuf->len == AUDIO_OCMEM_BUF_SIZE)) {
+		if (rbuf->len == AUDIO_OCMEM_BUF_SIZE) {
 			audio_ocmem_lcl.buf = data;
 			pr_debug("%s: Alloc grow request received buf->addr: 0x%08lx\n",
 						__func__,

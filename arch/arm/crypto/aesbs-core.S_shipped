@@ -1366,7 +1366,16 @@ bsaes_ctr32_encrypt_blocks:
 .align	2
 0:	add	r12, r3, #248
 	vld1.8	{q0}, [r8]		@ load counter
-	adrl	r8, .LREVM0SR			@ borrow r8
+#ifdef __thumb__
+	adr	r8, .LREVM0SR			@ borrow r8
+#else
+	@ ARM-state adrl: PC reads as .+8, and the distance to
+	@ .LREVM0SR stays below 64 KiB, so two SUB immediates of
+	@ bits [7:0] and [15:8] cover it.
+.Lctr_enc_revm0sr:
+	sub	r8, pc, #(.Lctr_enc_revm0sr + 8 - .LREVM0SR) & 0xff	@ borrow r8
+	sub	r8, r8, #(.Lctr_enc_revm0sr + 8 - .LREVM0SR) & 0xff00
+#endif
 	vldmia	r12, {q4}			@ load round0 key
 	sub	sp, #0x10			@ place for adjusted round0 key
 #endif

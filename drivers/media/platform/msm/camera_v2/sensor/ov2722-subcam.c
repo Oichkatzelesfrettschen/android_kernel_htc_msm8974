@@ -11,12 +11,14 @@
  *
  */
 #include "msm_sensor.h"
+#include "msm_duo_sync.h"
 #include <mach/devices_cmdline.h>
 #define OV2722_SENSOR_NAME "ov2722-subcam"
 
 DEFINE_MSM_MUTEX(ov2722_mut);
 
 static struct msm_sensor_ctrl_t ov2722_s_ctrl;
+static int ov2722_duo_write_fl(u16 fl, u32 exp);
 
 // HTC: for subcam no ack issue
 extern int g_subcam_SOF;
@@ -550,7 +552,11 @@ static int ov2722_sysfs_init(void)
 		pr_info("ov2722_sysfs_init: sysfs_create_file " \
 		"failed\n");
 		kobject_del(android_ov2722);
+		return 0 ;
 	}
+	if (duo_sync_sysfs_init(android_ov2722))
+		pr_err("ov2722_sysfs_init: duo_sync attributes failed\n");
+	duo_sync_register_writer(ov2722_duo_write_fl);
 
 	return 0 ;
 }
@@ -627,6 +633,7 @@ int32_t ov2722_sub_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
         ov2722_sub_power_down_setting[i].data[j] = ov2722_sub_power_setting[i].data[j];
     }
 
+    duo_sync_stream_off();
     status = msm_sensor_power_down(s_ctrl);
     pr_info("%s: -\n", __func__);
     return status;
@@ -693,6 +700,7 @@ int32_t ov2722_sub_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 
             conf_array.reg_setting = reg_setting;
             reg_setting_temp = reg_setting;
+            duo_sync_filter_table(&conf_array);
 
             if (reg_setting_temp->reg_addr == 0x0100 && reg_setting_temp->reg_data == 0x01)
             {
@@ -726,9 +734,55 @@ int32_t ov2722_sub_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 	    }
 		break;
 	default:
+		if (cdata->cfgtype == CFG_WRITE_I2C_SEQ_ARRAY)
+			duo_sync_count_seq_write();
 		rc = msm_sensor_config(s_ctrl, argp);
 		break;
 	}
+	return rc;
+}
+
+/*
+ * Frame length and exposure writer for msm_duo_sync, bracketed in group
+ * hold 0 as the daemon's exposure tables are; never waits on the sensor
+ * mutex.
+ */
+static int ov2722_duo_write_fl(u16 fl, u32 exp)
+{
+	struct msm_sensor_ctrl_t *s_ctrl = &ov2722_s_ctrl;
+	struct msm_camera_i2c_reg_array regs[] = {
+		{0x3208, 0x00, 0},
+		{0x380e, fl >> 8, 0},
+		{0x380f, fl & 0xff, 0},
+		{0x3500, (exp >> 16) & 0x0f, 0},
+		{0x3501, (exp >> 8) & 0xff, 0},
+		{0x3502, exp & 0xff, 0},
+		{0x3208, 0x10, 0},
+		{0x3208, 0xa0, 0},
+	};
+	struct msm_camera_i2c_reg_setting setting = {
+		.reg_setting = regs,
+		.size = ARRAY_SIZE(regs),
+		.addr_type = MSM_CAMERA_I2C_WORD_ADDR,
+		.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+		.delay = 0,
+	};
+	int rc;
+
+	if (!exp) {
+		/* No exposure yet: drop its three entries, keep the hold. */
+		regs[3] = regs[6];
+		regs[4] = regs[7];
+		setting.size = 5;
+	}
+	if (!mutex_trylock(s_ctrl->msm_sensor_mutex))
+		return -EBUSY;
+	if (s_ctrl->sensor_state != MSM_SENSOR_POWER_UP)
+		rc = -ENODEV;
+	else
+		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write_table(
+			s_ctrl->sensor_i2c_client, &setting);
+	mutex_unlock(s_ctrl->msm_sensor_mutex);
 	return rc;
 }
 

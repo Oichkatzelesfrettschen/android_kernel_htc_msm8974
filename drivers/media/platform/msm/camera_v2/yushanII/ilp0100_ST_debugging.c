@@ -79,7 +79,7 @@ char	 FunctionsLevel[20][45];
  * \retval		ILP0100_ERROR_NONE : Success
  * \retval		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_loggingOpen()
+ilp0100_error Ilp0100_loggingOpen(void)
 {
 	ilp0100_error Status = ILP0100_ERROR_NONE;
 	/* Creates the buffer */
@@ -109,7 +109,7 @@ ilp0100_error Ilp0100_loggingOpen()
  * \retval		ILP0100_ERROR_NONE : Success
  * \retval		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_loggingClose()
+ilp0100_error Ilp0100_loggingClose(void)
 {
 	ilp0100_error Status = ILP0100_ERROR_NONE;
 	if(Ilp0100DebugStarted){
@@ -166,7 +166,7 @@ ilp0100_error Ilp0100_loggingStart(uint8_t DebugLevel)
  * \retval		ILP0100_ERROR_NONE : Success
  * \retval		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_loggingStop()
+ilp0100_error Ilp0100_loggingStop(void)
 {
 	ilp0100_error Status = ILP0100_ERROR_NONE;
 	uint32_t CurrentTime;
@@ -212,7 +212,7 @@ ilp0100_error Ilp0100_logDebugMessageStart(const char* pFunctionName)
  * \retval		ILP0100_ERROR_NONE : Success
  * \retval		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_logDebugMessageEnd()
+ilp0100_error Ilp0100_logDebugMessageEnd(void)
 {
 	ilp0100_error Status = ILP0100_ERROR_NONE;
 	if(pIlp0100DebugBuffer!=0) {
@@ -252,7 +252,7 @@ ilp0100_error Ilp0100_logErrorMessageStart(const char* pFunctionName)
  * \retval		ILP0100_ERROR_NONE : Success
  * \retval		"Other Error Code" : Failure
  */
-ilp0100_error Ilp0100_logErrorMessageEnd()
+ilp0100_error Ilp0100_logErrorMessageEnd(void)
 {
 	ilp0100_error Status = ILP0100_ERROR_NONE;
 

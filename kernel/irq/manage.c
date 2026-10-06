@@ -753,7 +753,7 @@ irq_thread_check_affinity(struct irq_desc *desc, struct irqaction *action)
 	 * This code is triggered unconditionally. Check the affinity
 	 * mask pointer. For CPU_MASK_OFFSTACK=n this is optimized out.
 	 */
-	if (desc->irq_data.affinity)
+	if (cpumask_available(desc->irq_data.affinity))
 		cpumask_copy(mask, desc->irq_data.affinity);
 	else
 		valid = false;
@@ -873,7 +873,7 @@ void exit_irq_thread(void)
 
 	printk(KERN_ERR
 	       "exiting task \"%s\" (%d) is an active IRQ thread (irq %d)\n",
-	       tsk->comm ? tsk->comm : "", tsk->pid, action->irq);
+	       tsk->comm, tsk->pid, action->irq);
 
 	desc = irq_to_desc(action->irq);
 

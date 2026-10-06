@@ -324,10 +324,7 @@ static uint16_t led_low_cap_limit_dual = 14;
 static ssize_t led_ril_status_get(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	ssize_t length;
-       if(buf)
-	    length = sprintf(buf, "%d\n", led_ril_status_value);
-	return length;
+	return sprintf(buf, "%d\n", led_ril_status_value);
 }
 
 static ssize_t led_ril_status_set(struct device *dev,
@@ -346,10 +343,7 @@ static ssize_t led_ril_status_set(struct device *dev,
 static ssize_t led_wimax_status_get(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	ssize_t length;
-	if(buf)
-	    length = sprintf(buf, "%d\n", led_wimax_status_value);
-	return length;
+	return sprintf(buf, "%d\n", led_wimax_status_value);
 }
 
 static ssize_t led_wimax_status_set(struct device *dev,
@@ -368,10 +362,7 @@ static ssize_t led_wimax_status_set(struct device *dev,
 static ssize_t led_hotspot_status_get(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	ssize_t length;
-	if(buf)
-	    length = sprintf(buf, "%d\n", led_hotspot_status_value);
-	return length;
+	return sprintf(buf, "%d\n", led_hotspot_status_value);
 }
 
 static ssize_t led_hotspot_status_set(struct device *dev,
@@ -389,28 +380,19 @@ static ssize_t led_hotspot_status_set(struct device *dev,
 static ssize_t low_temp_limit_get(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	ssize_t length;
-	if(buf)
-	    length = sprintf(buf, "%d\n", led_low_temp_limit);
-	return length;
+	return sprintf(buf, "%d\n", led_low_temp_limit);
 }
 
 static ssize_t low_cap_limit_get(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	ssize_t length;
-	if(buf)
-	    length = sprintf(buf, "%d\n", led_low_cap_limit);
-	return length;
+	return sprintf(buf, "%d\n", led_low_cap_limit);
 }
 
 static ssize_t low_cap_limit_dual_get(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	ssize_t length;
-	if(buf)
-	    length = sprintf(buf, "%d\n", led_low_cap_limit_dual);
-	return length;
+	return sprintf(buf, "%d\n", led_low_cap_limit_dual);
 }
 
 static DEVICE_ATTR(led_ril_status, 0644,

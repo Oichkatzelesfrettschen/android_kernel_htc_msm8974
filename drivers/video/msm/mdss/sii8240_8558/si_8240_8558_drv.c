@@ -3267,7 +3267,7 @@ static int acc_switch_int_1(struct drv_hw_context *hw_context,
 	return ret_val;
 }
 
-int get_device_id()
+int get_device_id(void)
 {
 	int ret_val;
 	static int device_id = 0;

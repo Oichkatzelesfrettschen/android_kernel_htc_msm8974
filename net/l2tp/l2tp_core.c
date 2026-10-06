@@ -1072,11 +1072,11 @@ static int l2tp_xmit_core(struct l2tp_session *session, struct sk_buff *skb,
 	/* Debug */
 	if (session->send_seq)
 		PRINTK(session->debug, L2TP_MSG_DATA, KERN_DEBUG,
-		       "%s: send %Zd bytes, ns=%u\n", session->name,
+		       "%s: send %zd bytes, ns=%u\n", session->name,
 		       data_len, session->ns - 1);
 	else
 		PRINTK(session->debug, L2TP_MSG_DATA, KERN_DEBUG,
-		       "%s: send %Zd bytes\n", session->name, data_len);
+		       "%s: send %zd bytes\n", session->name, data_len);
 
 	if (session->debug & L2TP_MSG_DATA) {
 		int i;

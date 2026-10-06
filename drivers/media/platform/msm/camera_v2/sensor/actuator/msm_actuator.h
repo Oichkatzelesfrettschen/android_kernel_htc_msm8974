@@ -146,4 +146,33 @@ int32_t msm_actuator_piezo_move_focus(struct msm_actuator_ctrl_t *a_ctrl,
 int32_t msm_actuator_set_ois_mode(struct msm_actuator_ctrl_t *a_ctrl, int ois_mode);
 int32_t msm_actuator_update_ois_tbl(struct msm_actuator_ctrl_t *a_ctrl, struct sensor_actuator_info_t * sensor_actuator_info);
 
+/*
+ * The actuator ioctl enums and the camera I2C enums are separate types.
+ * These helpers translate the actuator value; a value the actuator enum
+ * does not define becomes the I2C *_MAX value, which the I2C layer rejects.
+ */
+static inline enum msm_camera_i2c_data_type
+msm_actuator_i2c_data_type(enum msm_actuator_data_type type)
+{
+	switch (type) {
+	case MSM_ACTUATOR_BYTE_DATA:
+		return MSM_CAMERA_I2C_BYTE_DATA;
+	case MSM_ACTUATOR_WORD_DATA:
+		return MSM_CAMERA_I2C_WORD_DATA;
+	}
+	return MSM_CAMERA_I2C_DATA_TYPE_MAX;
+}
+
+static inline enum msm_camera_i2c_reg_addr_type
+msm_actuator_i2c_addr_type(enum msm_actuator_addr_type type)
+{
+	switch (type) {
+	case MSM_ACTUATOR_BYTE_ADDR:
+		return MSM_CAMERA_I2C_BYTE_ADDR;
+	case MSM_ACTUATOR_WORD_ADDR:
+		return MSM_CAMERA_I2C_WORD_ADDR;
+	}
+	return MSM_CAMERA_I2C_ADDR_TYPE_MAX;
+}
+
 #endif

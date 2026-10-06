@@ -45,7 +45,7 @@ struct apr_svc *apr_register(char *dest, char *svc_name, apr_fn svc_fn,
 		goto done;
 	}
 
-	if ((dest_id == APR_DEST_QDSP6)) {
+	if (dest_id == APR_DEST_QDSP6) {
 		if (apr_get_q6_state() != APR_SUBSYS_LOADED) {
 			pr_err("%s: adsp not up\n", __func__);
 			return NULL;

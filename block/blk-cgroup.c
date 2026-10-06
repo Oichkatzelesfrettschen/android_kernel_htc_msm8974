@@ -1205,7 +1205,7 @@ static int blkiocg_file_read(struct cgroup *cgrp, struct cftype *cft,
 
 static int blkio_read_blkg_stats(struct blkio_cgroup *blkcg,
 		struct cftype *cft, struct cgroup_map_cb *cb,
-		enum stat_type type, bool show_total, bool pcpu)
+		enum stat_type type, bool show_total)
 {
 	struct blkio_group *blkg;
 	struct hlist_node *n;
@@ -1216,15 +1216,33 @@ static int blkio_read_blkg_stats(struct blkio_cgroup *blkcg,
 		if (blkg->dev) {
 			if (!cftype_blkg_same_policy(cft, blkg))
 				continue;
-			if (pcpu)
-				cgroup_total += blkio_get_stat_cpu(blkg, cb,
-						blkg->dev, type);
-			else {
-				spin_lock_irq(&blkg->stats_lock);
-				cgroup_total += blkio_get_stat(blkg, cb,
-						blkg->dev, type);
-				spin_unlock_irq(&blkg->stats_lock);
-			}
+			spin_lock_irq(&blkg->stats_lock);
+			cgroup_total += blkio_get_stat(blkg, cb,
+					blkg->dev, type);
+			spin_unlock_irq(&blkg->stats_lock);
+		}
+	}
+	if (show_total)
+		cb->fill(cb, "Total", cgroup_total);
+	rcu_read_unlock();
+	return 0;
+}
+
+static int blkio_read_blkg_stats_cpu(struct blkio_cgroup *blkcg,
+		struct cftype *cft, struct cgroup_map_cb *cb,
+		enum stat_type_cpu type, bool show_total)
+{
+	struct blkio_group *blkg;
+	struct hlist_node *n;
+	uint64_t cgroup_total = 0;
+
+	rcu_read_lock();
+	hlist_for_each_entry_rcu(blkg, n, &blkcg->blkg_list, blkcg_node) {
+		if (blkg->dev) {
+			if (!cftype_blkg_same_policy(cft, blkg))
+				continue;
+			cgroup_total += blkio_get_stat_cpu(blkg, cb,
+					blkg->dev, type);
 		}
 	}
 	if (show_total)
@@ -1248,47 +1266,47 @@ static int blkiocg_file_read_map(struct cgroup *cgrp, struct cftype *cft,
 		switch(name) {
 		case BLKIO_PROP_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_TIME, 0, 0);
+						BLKIO_STAT_TIME, 0);
 		case BLKIO_PROP_sectors:
-			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_CPU_SECTORS, 0, 1);
+			return blkio_read_blkg_stats_cpu(blkcg, cft, cb,
+						BLKIO_STAT_CPU_SECTORS, 0);
 		case BLKIO_PROP_io_service_bytes:
-			return blkio_read_blkg_stats(blkcg, cft, cb,
-					BLKIO_STAT_CPU_SERVICE_BYTES, 1, 1);
+			return blkio_read_blkg_stats_cpu(blkcg, cft, cb,
+					BLKIO_STAT_CPU_SERVICE_BYTES, 1);
 		case BLKIO_PROP_io_serviced:
-			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_CPU_SERVICED, 1, 1);
+			return blkio_read_blkg_stats_cpu(blkcg, cft, cb,
+						BLKIO_STAT_CPU_SERVICED, 1);
 		case BLKIO_PROP_io_service_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_SERVICE_TIME, 1, 0);
+						BLKIO_STAT_SERVICE_TIME, 1);
 		case BLKIO_PROP_io_wait_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_WAIT_TIME, 1, 0);
+						BLKIO_STAT_WAIT_TIME, 1);
 		case BLKIO_PROP_io_merged:
-			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_CPU_MERGED, 1, 1);
+			return blkio_read_blkg_stats_cpu(blkcg, cft, cb,
+						BLKIO_STAT_CPU_MERGED, 1);
 		case BLKIO_PROP_io_queued:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_QUEUED, 1, 0);
+						BLKIO_STAT_QUEUED, 1);
 #ifdef CONFIG_DEBUG_BLK_CGROUP
 		case BLKIO_PROP_unaccounted_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-					BLKIO_STAT_UNACCOUNTED_TIME, 0, 0);
+					BLKIO_STAT_UNACCOUNTED_TIME, 0);
 		case BLKIO_PROP_dequeue:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_DEQUEUE, 0, 0);
+						BLKIO_STAT_DEQUEUE, 0);
 		case BLKIO_PROP_avg_queue_size:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-					BLKIO_STAT_AVG_QUEUE_SIZE, 0, 0);
+					BLKIO_STAT_AVG_QUEUE_SIZE, 0);
 		case BLKIO_PROP_group_wait_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-					BLKIO_STAT_GROUP_WAIT_TIME, 0, 0);
+					BLKIO_STAT_GROUP_WAIT_TIME, 0);
 		case BLKIO_PROP_idle_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_IDLE_TIME, 0, 0);
+						BLKIO_STAT_IDLE_TIME, 0);
 		case BLKIO_PROP_empty_time:
 			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_EMPTY_TIME, 0, 0);
+						BLKIO_STAT_EMPTY_TIME, 0);
 #endif
 		default:
 			BUG();
@@ -1297,11 +1315,11 @@ static int blkiocg_file_read_map(struct cgroup *cgrp, struct cftype *cft,
 	case BLKIO_POLICY_THROTL:
 		switch(name){
 		case BLKIO_THROTL_io_service_bytes:
-			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_CPU_SERVICE_BYTES, 1, 1);
+			return blkio_read_blkg_stats_cpu(blkcg, cft, cb,
+						BLKIO_STAT_CPU_SERVICE_BYTES, 1);
 		case BLKIO_THROTL_io_serviced:
-			return blkio_read_blkg_stats(blkcg, cft, cb,
-						BLKIO_STAT_CPU_SERVICED, 1, 1);
+			return blkio_read_blkg_stats_cpu(blkcg, cft, cb,
+						BLKIO_STAT_CPU_SERVICED, 1);
 		default:
 			BUG();
 		}

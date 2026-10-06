@@ -14,6 +14,7 @@
 #include <asm/div64.h>
 #include "msm_isp_util.h"
 #include "msm_isp_axi_util.h"
+#include "msm_duo_sync.h"
 
 // HTC: for subcam no ack issue
 int g_subcam_SOF = 0;
@@ -442,6 +443,8 @@ void msm_isp_sof_notify(struct vfe_device *vfe_dev,
 
 		if (vfe_dev->pdev->id == g_subcam_vfe_intf && g_subcam_SOF < 100)
 			g_subcam_SOF ++;
+
+		duo_sync_sof(vfe_dev->pdev->id, &ts->buf_time);
 
 		vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id++;
 		if (vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id == 0)

@@ -54,7 +54,7 @@ static inline const char *memblock_type_name(struct memblock_type *type)
 /* adjust *@size so that (@base + *@size) doesn't overflow, return new size */
 static inline phys_addr_t memblock_cap_size(phys_addr_t base, phys_addr_t *size)
 {
-	return *size = min(*size, (phys_addr_t)ULLONG_MAX - base);
+	return *size = min(*size, PHYS_ADDR_MAX - base);
 }
 
 /*
@@ -604,7 +604,7 @@ void __init_memblock __next_free_mem_range(u64 *idx, int nid,
 		for ( ; ri < rsv->cnt + 1; ri++) {
 			struct memblock_region *r = &rsv->regions[ri];
 			phys_addr_t r_start = ri ? r[-1].base + r[-1].size : 0;
-			phys_addr_t r_end = ri < rsv->cnt ? r->base : ULLONG_MAX;
+			phys_addr_t r_end = ri < rsv->cnt ? r->base : PHYS_ADDR_MAX;
 
 			/* if ri advanced past mi, break out to advance mi */
 			if (r_start >= m_end)
@@ -672,7 +672,7 @@ void __init_memblock __next_free_mem_range_rev(u64 *idx, int nid,
 		for ( ; ri >= 0; ri--) {
 			struct memblock_region *r = &rsv->regions[ri];
 			phys_addr_t r_start = ri ? r[-1].base + r[-1].size : 0;
-			phys_addr_t r_end = ri < rsv->cnt ? r->base : ULLONG_MAX;
+			phys_addr_t r_end = ri < rsv->cnt ? r->base : PHYS_ADDR_MAX;
 
 			/* if ri advanced past mi, break out to advance mi */
 			if (r_end <= m_start)
@@ -845,7 +845,7 @@ phys_addr_t __init_memblock memblock_end_of_DRAM(void)
 void __init memblock_enforce_memory_limit(phys_addr_t limit)
 {
 	unsigned long i;
-	phys_addr_t max_addr = (phys_addr_t)ULLONG_MAX;
+	phys_addr_t max_addr = PHYS_ADDR_MAX;
 
 	if (!limit)
 		return;
@@ -862,8 +862,8 @@ void __init memblock_enforce_memory_limit(phys_addr_t limit)
 	}
 
 	/* truncate both memory and reserved regions */
-	__memblock_remove(&memblock.memory, max_addr, (phys_addr_t)ULLONG_MAX);
-	__memblock_remove(&memblock.reserved, max_addr, (phys_addr_t)ULLONG_MAX);
+	__memblock_remove(&memblock.memory, max_addr, PHYS_ADDR_MAX);
+	__memblock_remove(&memblock.reserved, max_addr, PHYS_ADDR_MAX);
 }
 
 static int __init_memblock memblock_search(struct memblock_type *type, phys_addr_t addr)

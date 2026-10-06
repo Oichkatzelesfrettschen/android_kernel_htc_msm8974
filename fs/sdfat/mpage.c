@@ -152,11 +152,6 @@ static inline unsigned int __sdfat_bio_size(struct bio *bio)
 {
 	return bio->bi_iter.bi_size;
 }
-
-static inline void __sdfat_set_bio_size(struct bio *bio, unsigned int size)
-{
-	bio->bi_iter.bi_size = size;
-}
 #else /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0) */
 static inline sector_t __sdfat_bio_sector(struct bio *bio)
 {
@@ -171,11 +166,6 @@ static inline void __sdfat_set_bio_sector(struct bio *bio, sector_t sector)
 static inline unsigned int __sdfat_bio_size(struct bio *bio)
 {
 	return bio->bi_size;
-}
-
-static inline void __sdfat_set_bio_size(struct bio *bio, unsigned int size)
-{
-	bio->bi_size = size;
 }
 #endif
 

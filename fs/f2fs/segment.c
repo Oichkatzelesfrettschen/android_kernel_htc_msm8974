@@ -926,7 +926,18 @@ static void update_sit_entry(struct f2fs_sb_info *sbi, block_t blkaddr, int del)
 
 void refresh_sit_entry(struct f2fs_sb_info *sbi, block_t old, block_t new)
 {
-	update_sit_entry(sbi, new, 1);
+	/*
+	 * update_sit_entry() indexes sit_i->sentries[GET_SEGNO(sbi, blkaddr)]
+	 * unconditionally; the "old" side already skips it when there is no
+	 * prior block. "new" ought never be NULL_ADDR/NEW_ADDR -- every
+	 * caller means to record a freshly written block -- but guard it
+	 * the same way: a caller path upstream of this one that computed an
+	 * invalid new block address (__has_curseg_space()'s NULL_SEGNO
+	 * curseg case above the two of these being a matched pair) must not
+	 * turn into an out-of-bounds sit_i->sentries[] access here.
+	 */
+	if (GET_SEGNO(sbi, new) != NULL_SEGNO)
+		update_sit_entry(sbi, new, 1);
 	if (GET_SEGNO(sbi, old) != NULL_SEGNO)
 		update_sit_entry(sbi, old, -1);
 
@@ -1204,8 +1215,25 @@ static void new_curseg(struct f2fs_sb_info *sbi, int type, bool new_sec)
 	unsigned int segno = curseg->segno;
 	int dir = ALLOC_LEFT;
 
-	write_sum_page(sbi, curseg->sum_blk,
-				GET_SUM_BLOCK(sbi, segno));
+	/*
+	 * segno is NULL_SEGNO the first time this curseg type is ever
+	 * allocated (build_curseg()'s initial value, left untouched by
+	 * restore_curseg_summaries() when the checkpoint's compacted
+	 * summary never covered this type -- reachable on a volume with
+	 * too few used segments to have exercised every curseg type at
+	 * mkfs time). There is no prior segment's summary to flush in
+	 * that case; GET_SUM_BLOCK(sbi, NULL_SEGNO) is a wild block
+	 * address and must not be written to. get_new_segment() below
+	 * also takes segno as its search hint (*newseg / segs_per_sec):
+	 * left as NULL_SEGNO, that hint runs the free-section bitmap scan
+	 * off the end of free_i->free_secmap. Search from section 0
+	 * instead when there is no real prior segment to hint from.
+	 */
+	if (segno != NULL_SEGNO)
+		write_sum_page(sbi, curseg->sum_blk,
+					GET_SUM_BLOCK(sbi, segno));
+	else
+		segno = 0;
 	if (type == CURSEG_WARM_DATA || type == CURSEG_COLD_DATA)
 		dir = ALLOC_RIGHT;
 
@@ -1396,6 +1424,19 @@ out:
 static bool __has_curseg_space(struct f2fs_sb_info *sbi, int type)
 {
 	struct curseg_info *curseg = CURSEG_I(sbi, type);
+	/*
+	 * build_curseg() leaves segno at NULL_SEGNO until
+	 * restore_curseg_summaries() assigns each of the NR_CURSEG_TYPE
+	 * cursegs a real segment from the checkpoint; next_blkoff starts
+	 * at 0 right alongside it. A curseg whose type restore never
+	 * covers -- reachable on a volume small enough that not every
+	 * type has its own segment -- reads as having space by next_blkoff
+	 * alone, so the first write of that type computes its block
+	 * address from a NULL_SEGNO curseg instead of ever reaching
+	 * allocate_segment() below.
+	 */
+	if (curseg->segno == NULL_SEGNO)
+		return false;
 	if (curseg->next_blkoff < sbi->blocks_per_seg)
 		return true;
 	return false;
