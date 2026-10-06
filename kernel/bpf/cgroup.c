@@ -19,6 +19,42 @@
 struct static_key cgroup_bpf_enabled_key = STATIC_KEY_INIT_FALSE;
 EXPORT_SYMBOL(cgroup_bpf_enabled_key);
 
+/*
+ * Every program in an effective array holds a reference of its own. rmdir
+ * unlinks a cgroup from its parent's children list while a socket's
+ * lifetime reference can keep it, and its effective arrays, in use; the
+ * subtree walk of a later attach or detach on an ancestor no longer reaches
+ * it, so the array keeps the programs it was built from alive until the
+ * cgroup itself is released. bpf_prog_put() frees a program after an RCU
+ * grace period, so a reader still walking a replaced array stays safe.
+ */
+static void effective_progs_free(struct bpf_prog_array __rcu *array)
+{
+	struct bpf_prog **prog;
+
+	if (!array)
+		return;
+	for (prog = rcu_dereference_protected(array, 1)->progs; *prog; prog++)
+		bpf_prog_put(*prog);
+	bpf_prog_array_free(array);
+}
+
+/**
+ * cgroup_bpf_init() - initialize the attached-program lists
+ * @cgrp: the cgroup to initialize
+ *
+ * Every cgroup, including a hierarchy's top cgroup before
+ * cgroup_bpf_inherit() runs, has valid empty lists, so cgroup_bpf_put()
+ * may run on any cgroup that reaches its last reference.
+ */
+void cgroup_bpf_init(struct cgroup *cgrp)
+{
+	unsigned int type;
+
+	for (type = 0; type < ARRAY_SIZE(cgrp->bpf.progs); type++)
+		INIT_LIST_HEAD(&cgrp->bpf.progs[type]);
+}
+
 /**
  * cgroup_bpf_put() - put references of all bpf programs
  * @cgrp: the cgroup to modify
@@ -37,7 +73,7 @@ void cgroup_bpf_put(struct cgroup *cgrp)
 			kfree(pl);
 			static_key_slow_dec(&cgroup_bpf_enabled_key);
 		}
-		bpf_prog_array_free(cgrp->bpf.effective[type]);
+		effective_progs_free(cgrp->bpf.effective[type]);
 	}
 }
 
@@ -120,6 +156,10 @@ static int compute_effective_progs(struct cgroup *cgrp,
 					    &p->bpf.progs[type], node) {
 				if (!pl->prog)
 					continue;
+				if (IS_ERR(bpf_prog_inc(pl->prog))) {
+					effective_progs_free(progs);
+					return -EBUSY;
+				}
 				rcu_dereference_protected(progs, 1)->
 					progs[cnt++] = pl->prog;
 			}
@@ -140,7 +180,7 @@ static void activate_effective_progs(struct cgroup *cgrp,
 	/* free prog array after grace period, since __cgroup_bpf_run_*()
 	 * might be still walking the array
 	 */
-	bpf_prog_array_free(old_array);
+	effective_progs_free(old_array);
 }
 
 /**
@@ -169,11 +209,71 @@ int cgroup_bpf_inherit(struct cgroup *cgrp)
 	return 0;
 cleanup:
 	for (i = 0; i < NR; i++)
-		bpf_prog_array_free(arrays[i]);
+		effective_progs_free(arrays[i]);
 	return -ENOMEM;
 }
 
 #define BPF_CGROUP_MAX_PROGS 64
+
+/*
+ * Pre-order successor of @pos within the subtree rooted at @top. Every
+ * cgroup's children and sibling lists change only under cgroup_mutex, so a
+ * caller holding it walks them without an RCU read-side section and may
+ * sleep between steps.
+ */
+static struct cgroup *next_subtree_cgroup(struct cgroup *pos,
+					  struct cgroup *top)
+{
+	if (!list_empty(&pos->children))
+		return list_first_entry(&pos->children, struct cgroup, sibling);
+
+	while (pos != top) {
+		if (!list_is_last(&pos->sibling, &pos->parent->children))
+			return list_entry(pos->sibling.next, struct cgroup,
+					  sibling);
+		pos = pos->parent;
+	}
+	return NULL;
+}
+
+/* Visits @top first, then every cgroup below it in pre-order. */
+#define for_each_subtree_cgroup(pos, top)				\
+	for (pos = (top); pos; pos = next_subtree_cgroup(pos, (top)))
+
+/*
+ * Recompute and activate the effective arrays of @cgrp and of every cgroup
+ * below it. All arrays are allocated with GFP_KERNEL before any is
+ * activated, so an allocation failure leaves every cgroup on its previous
+ * array. Called with cgroup_mutex held and outside any RCU read-side
+ * section.
+ */
+static int update_effective_progs(struct cgroup *cgrp,
+				  enum bpf_attach_type type)
+{
+	struct cgroup *desc;
+	int err;
+
+	WARN_ON_ONCE(!cgroup_lock_is_held());
+
+	for_each_subtree_cgroup(desc, cgrp) {
+		err = compute_effective_progs(desc, type, &desc->bpf.inactive);
+		if (err)
+			goto cleanup;
+	}
+
+	for_each_subtree_cgroup(desc, cgrp) {
+		activate_effective_progs(desc, type, desc->bpf.inactive);
+		desc->bpf.inactive = NULL;
+	}
+	return 0;
+
+cleanup:
+	for_each_subtree_cgroup(desc, cgrp) {
+		effective_progs_free(desc->bpf.inactive);
+		desc->bpf.inactive = NULL;
+	}
+	return err;
+}
 
 /**
  * __cgroup_bpf_attach() - Attach the program to a cgroup, and
@@ -189,7 +289,6 @@ int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 {
 	struct list_head *progs = &cgrp->bpf.progs[type];
 	struct bpf_prog *old_prog = NULL;
-	struct cgroup *desc;
 	struct bpf_prog_list *pl;
 	bool pl_was_allocated;
 	u32 old_flags;
@@ -242,22 +341,9 @@ int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 	old_flags = cgrp->bpf.flags[type];
 	cgrp->bpf.flags[type] = flags;
 
-	/* allocate and recompute effective prog arrays */
-	rcu_read_lock();
-	cgroup_for_each_descendant_pre(desc, cgrp) {
-
-		err = compute_effective_progs(desc, type, &desc->bpf.inactive);
-		if (err)
-			goto cleanup;
-	}
-
-	/* all allocations were successful. Activate all prog arrays */
-	cgroup_for_each_descendant_pre(desc, cgrp) {
-
-		activate_effective_progs(desc, type, desc->bpf.inactive);
-		desc->bpf.inactive = NULL;
-	}
-	rcu_read_unlock();
+	err = update_effective_progs(cgrp, type);
+	if (err)
+		goto cleanup;
 
 	static_key_slow_inc(&cgroup_bpf_enabled_key);
 	if (old_prog) {
@@ -267,16 +353,6 @@ int __cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 	return 0;
 
 cleanup:
-	/* oom while computing effective. Free all computed effective arrays
-	 * since they were not activated
-	 */
-	cgroup_for_each_descendant_pre(desc, cgrp) {
-
-		bpf_prog_array_free(desc->bpf.inactive);
-		desc->bpf.inactive = NULL;
-	}
-	rcu_read_unlock();
-
 	/* and cleanup the prog list */
 	pl->prog = old_prog;
 	if (pl_was_allocated) {
@@ -301,7 +377,6 @@ int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 	struct list_head *progs = &cgrp->bpf.progs[type];
 	u32 flags = cgrp->bpf.flags[type];
 	struct bpf_prog *old_prog = NULL;
-	struct cgroup *desc;
 	struct bpf_prog_list *pl;
 	int err;
 
@@ -340,23 +415,9 @@ int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 		pl->prog = NULL;
 	}
 
-	/* allocate and recompute effective prog arrays */
-	rcu_read_lock();
-	cgroup_for_each_descendant_pre(desc, cgrp) {
-
-		err = compute_effective_progs(desc, type, &desc->bpf.inactive);
-		if (err)
-			goto cleanup;
-	}
-
-	/* all allocations were successful. Activate all prog arrays */
-	cgroup_for_each_descendant_pre(desc, cgrp) {
-
-		activate_effective_progs(desc, type, desc->bpf.inactive);
-		desc->bpf.inactive = NULL;
-	}
-	rcu_read_unlock();
-
+	err = update_effective_progs(cgrp, type);
+	if (err)
+		goto cleanup;
 
 	/* now can actually delete it from this cgroup list */
 	list_del(&pl->node);
@@ -370,16 +431,6 @@ int __cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
 	return 0;
 
 cleanup:
-	/* oom while computing effective. Free all computed effective arrays
-	 * since they were not activated
-	 */
-	cgroup_for_each_descendant_pre(desc, cgrp) {
-
-		bpf_prog_array_free(desc->bpf.inactive);
-		desc->bpf.inactive = NULL;
-	}
-	rcu_read_unlock();
-
 	/* and restore back old_prog */
 	pl->prog = old_prog;
 	return err;

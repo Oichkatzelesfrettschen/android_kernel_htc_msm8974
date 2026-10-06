@@ -37,6 +37,7 @@ struct cgroup_bpf {
 	struct bpf_prog_array __rcu *inactive;
 };
 
+void cgroup_bpf_init(struct cgroup *cgrp);
 void cgroup_bpf_put(struct cgroup *cgrp);
 int cgroup_bpf_inherit(struct cgroup *cgrp);
 
@@ -80,6 +81,7 @@ int __cgroup_bpf_run_filter(struct sock *sk,
 #else
 
 struct cgroup_bpf {};
+static inline void cgroup_bpf_init(struct cgroup *cgrp) {}
 static inline void cgroup_bpf_put(struct cgroup *cgrp) {}
 static inline int cgroup_bpf_inherit(struct cgroup *cgrp) { return 0; }
 

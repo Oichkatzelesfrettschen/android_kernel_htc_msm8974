@@ -271,6 +271,7 @@ EXPORT_SYMBOL_GPL(cgroup_is_descendant);
 /* bits in struct cgroupfs_root flags field */
 enum {
 	ROOT_NOPREFIX, /* mounted subsystems have no named prefix */
+	ROOT_CGROUP2,  /* mounted through compat_cgroup2_fs_type */
 };
 
 static int cgroup_is_releasable(const struct cgroup *cgrp)
@@ -888,9 +889,11 @@ static int cgroup_call_pre_destroy(struct cgroup *cgrp)
 	return ret;
 }
 
+static void cgroup_drop_root(struct cgroupfs_root *root);
+
 static void cgroup_diput(struct dentry *dentry, struct inode *inode)
 {
-	/* is dentry a directory ? if so, kfree() associated cgroup */
+	/* a directory owns the base lifetime reference of its cgroup */
 	if (S_ISDIR(inode->i_mode)) {
 		struct cgroup *cgrp = dentry->d_fsdata;
 		struct cgroup_subsys *ss;
@@ -904,7 +907,6 @@ static void cgroup_diput(struct dentry *dentry, struct inode *inode)
 		synchronize_rcu();
 
 		mutex_lock(&cgroup_mutex);
-		cgroup_bpf_put(cgrp);
 		/*
 		 * Release the subsystem state objects.
 		 */
@@ -926,10 +928,44 @@ static void cgroup_diput(struct dentry *dentry, struct inode *inode)
 		 */
 		BUG_ON(!list_empty(&cgrp->pidlists));
 
-		kfree_rcu(cgrp, rcu_head);
+		cgroup_put(cgrp);
 	}
 	iput(inode);
 }
+
+/*
+ * Runs once the last lifetime reference is gone. cgroup_put() is reached
+ * from sk_free() in softirq context, and cgroup_bpf_put() takes
+ * cgroup_mutex and the static-key mutex, so the release runs from a work
+ * item. No socket, bpf map, file descriptor user or child points at @cgrp
+ * any more, so its programs are released and the memory is freed after an
+ * RCU grace period. A top cgroup is embedded in its cgroupfs_root, which
+ * is freed with it.
+ */
+static void cgroup_release_workfn(struct work_struct *work)
+{
+	struct cgroup *cgrp = container_of(work, struct cgroup, release_work);
+	struct cgroup *parent = cgrp->parent;
+
+	mutex_lock(&cgroup_mutex);
+	cgroup_bpf_put(cgrp);
+	mutex_unlock(&cgroup_mutex);
+
+	if (cgrp == cgrp->top_cgroup) {
+		cgroup_drop_root(cgrp->root);
+		return;
+	}
+
+	kfree_rcu(cgrp, rcu_head);
+	cgroup_put(parent);
+}
+
+void cgroup_put(struct cgroup *cgrp)
+{
+	if (atomic_dec_and_test(&cgrp->refcnt))
+		schedule_work(&cgrp->release_work);
+}
+EXPORT_SYMBOL_GPL(cgroup_put);
 
 static int cgroup_delete(const struct dentry *d)
 {
@@ -1326,6 +1362,17 @@ static int cgroup_remount(struct super_block *sb, int *flags, char *data)
 	mutex_lock(&cgroup_mutex);
 	mutex_lock(&cgroup_root_mutex);
 
+	/*
+	 * The unified hierarchy binds no subsystem and takes no mount option,
+	 * so a remount changes only the generic superblock flags.
+	 */
+	if (test_bit(ROOT_CGROUP2, &root->flags)) {
+		memset(&opts, 0, sizeof(opts));
+		if (data && *data)
+			ret = -EINVAL;
+		goto out_unlock;
+	}
+
 	/* See what subsystems are wanted */
 	ret = parse_cgroupfs_options(data, &opts);
 	if (ret)
@@ -1368,6 +1415,9 @@ static const struct super_operations cgroup_ops = {
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
 {
+	atomic_set(&cgrp->refcnt, 1);
+	INIT_WORK(&cgrp->release_work, cgroup_release_workfn);
+	cgroup_bpf_init(cgrp);
 	INIT_LIST_HEAD(&cgrp->sibling);
 	INIT_LIST_HEAD(&cgrp->children);
 	INIT_LIST_HEAD(&cgrp->css_sets);
@@ -1541,6 +1591,7 @@ static struct dentry *cgroup_mount(struct file_system_type *fs_type,
 	if(is_v2){
 	       memset(&opts, 0, sizeof(opts));
 	       opts.none = true;
+	       set_bit(ROOT_CGROUP2, &opts.flags);
 	}
 
 	else{
@@ -1727,7 +1778,8 @@ static void cgroup_kill_sb(struct super_block *sb) {
 	mutex_unlock(&cgroup_mutex);
 
 	kill_litter_super(sb);
-	cgroup_drop_root(root);
+	/* the hierarchy is freed when its top cgroup's last reference drops */
+	cgroup_put(cgrp);
 }
 
 static struct file_system_type cgroup_fs_type = {
@@ -4002,6 +4054,9 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	err = cgroup_populate_dir(cgrp);
 	/* If err < 0, we have a half-filled directory - oh well ;) */
 
+	/* a child keeps its parent readable until the child is freed */
+	cgroup_get(parent);
+
 	mutex_unlock(&cgroup_mutex);
 	mutex_unlock(&cgrp->dentry->d_inode->i_mutex);
 
@@ -4020,6 +4075,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 		if (cgrp->subsys[ss->subsys_id])
 			ss->destroy(cgrp);
 	}
+	cgroup_bpf_put(cgrp);
 
 	mutex_unlock(&cgroup_mutex);
 
@@ -4163,8 +4219,6 @@ static int cgroup_rmdir(struct inode *unused_dir, struct dentry *dentry)
 	DEFINE_WAIT(wait);
 	struct cgroup_event *event, *tmp;
 	int ret;
-
-return 0;
 
 	/* the vfs holds both inode->i_mutex already */
 again:
@@ -4629,7 +4683,13 @@ static int proc_cgroup_show(struct seq_file *m, void *v)
 		struct cgroup *cgrp;
 		int count = 0;
 
-		seq_printf(m, "%d:", root->hierarchy_id);
+		/*
+		 * The unified hierarchy reports ID 0, which is the "0::" line
+		 * libprocessgroup's GetTaskGroup() looks for on a version 2
+		 * controller.
+		 */
+		seq_printf(m, "%d:", test_bit(ROOT_CGROUP2, &root->flags) ?
+			   0 : root->hierarchy_id);
 		for_each_subsys(root, ss)
 			seq_printf(m, "%s%s", count++ ? "," : "", ss->name);
 		if (strlen(root->name))
@@ -5290,60 +5350,63 @@ struct cgroup *cgroup_get_from_fd(int fd)
 		return ERR_PTR(-EBADF);
 	}
 
+	/* the open directory pins the dentry and with it the base reference */
 	cgrp = __d_cgrp(f->f_dentry);
-	atomic_inc(&cgrp->count);
+	cgroup_get(cgrp);
 	fput(f);
 	return cgrp;
 
 }
 EXPORT_SYMBOL_GPL(cgroup_get_from_fd);
 
-static struct cgroupfs_root *findBpfCg(void){
-
-	struct cgroupfs_root *root;
-
-	for_each_active_root(root)
-		if(root->subsys_bits == 0)
-			return root;
-
-	return NULL;
-
-}
-
+/*
+ * Point a new socket at the calling task's cgroup in the cgroup2 compat
+ * hierarchy, the one cgroup-bpf programs attach to, and take a lifetime
+ * reference on it. Socket allocation may run in atomic context, so the
+ * lookup holds only rcu_read_lock(), which keeps the task's css_set alive,
+ * and css_set_lock, which keeps its cg_links list and every linked cgroup
+ * in place. A cgroup linked to a css_set still holds its base reference,
+ * and cgroup_kill_sb() unlinks the top cgroup under the same lock before
+ * dropping its base reference, so the hierarchy is resolved on every call
+ * and no root pointer outlives an unmount. A socket allocated in interrupt
+ * context belongs to no task and gets no cgroup.
+ */
 void cgroup_sk_alloc(struct cgroup **skcg)
 {
-	struct cgroup *cgrp;
-	static struct cgroupfs_root *bpfRoot = NULL;
+	struct cg_cgroup_link *link;
+	struct css_set *cg;
 
-	/* Don't associate the sock with unrelated interrupted task's cgroup. */
+	*skcg = NULL;
 	if (in_interrupt())
 		return;
 
-	if(bpfRoot == NULL)
-		bpfRoot = findBpfCg();
+	rcu_read_lock();
+	read_lock(&css_set_lock);
+	cg = rcu_dereference(current->cgroups);
+	list_for_each_entry(link, &cg->cg_links, cg_link_list) {
+		struct cgroup *cgrp = link->cgrp;
 
-	if(bpfRoot){
-		mutex_lock(&cgroup_mutex);
-		cgrp = task_cgroup_from_root(current, bpfRoot);
-	        atomic_inc(&cgrp->count);
-		mutex_unlock(&cgroup_mutex);
-		*skcg = cgrp;
+		if (!test_bit(ROOT_CGROUP2, &cgrp->root->flags))
+			continue;
+		if (cgroup_tryget(cgrp))
+			*skcg = cgrp;
+		break;
 	}
-	else
-		*skcg = NULL;
+	read_unlock(&css_set_lock);
+	rcu_read_unlock();
 }
 
 void cgroup_sk_clone(struct cgroup *skcg)
 {
 	/* Socket clone path */
 	if (skcg)
-		atomic_inc(&skcg->count);
+		cgroup_get(skcg);
 }
 
 void cgroup_sk_free(struct cgroup *skcg)
 {
 	if (skcg)
-		atomic_dec(&skcg->count);
+		cgroup_put(skcg);
 }
 
 #ifdef CONFIG_CGROUP_BPF
