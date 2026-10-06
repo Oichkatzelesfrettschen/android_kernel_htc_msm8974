@@ -16,6 +16,7 @@
 #include <linux/prio_heap.h>
 #include <linux/rwsem.h>
 #include <linux/idr.h>
+#include <linux/workqueue.h>
 #include <linux/bpf-cgroup.h>
 
 #ifdef CONFIG_CGROUPS
@@ -156,10 +157,22 @@ struct cgroup {
 	unsigned long flags;		/* "unsigned long" so bitops work */
 
 	/*
-	 * count users of this cgroup. >0 means busy, but doesn't
-	 * necessarily indicate the number of tasks in the cgroup
+	 * Number of css_set links to this cgroup. >0 means tasks may still
+	 * be attached, and rmdir and the release agent treat it as busy.
 	 */
 	atomic_t count;
+
+	/*
+	 * Lifetime references, independent of count. The cgroup directory
+	 * holds the base reference until cgroup_diput(), the mounted
+	 * hierarchy holds it for the top cgroup until cgroup_kill_sb(), each
+	 * child holds one on its parent, and every socket and every
+	 * cgroup_get_from_fd() user holds one. The last cgroup_put() queues
+	 * release_work, which releases the bpf programs and frees the cgroup,
+	 * so a socket keeps a removed cgroup readable without blocking rmdir.
+	 */
+	atomic_t refcnt;
+	struct work_struct release_work;
 
 	/*
 	 * We link our 'sibling' struct into our parent's 'children'.
@@ -739,6 +752,20 @@ void cgroup_sk_clone(struct cgroup *skcg);
 void cgroup_sk_free(struct cgroup *skcg);
 
 struct cgroup *cgroup_get_from_fd(int fd);
+
+/* Takes a lifetime reference; the caller already holds one on @cgrp. */
+static inline void cgroup_get(struct cgroup *cgrp)
+{
+	atomic_inc(&cgrp->refcnt);
+}
+
+/* Takes a lifetime reference unless the last one is already gone. */
+static inline bool cgroup_tryget(struct cgroup *cgrp)
+{
+	return atomic_inc_not_zero(&cgrp->refcnt);
+}
+
+void cgroup_put(struct cgroup *cgrp);
 #else /* !CONFIG_CGROUPS */
 
 static inline int cgroup_init_early(void) { return 0; }

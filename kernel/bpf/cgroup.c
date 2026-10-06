@@ -20,6 +20,22 @@ struct static_key cgroup_bpf_enabled_key = STATIC_KEY_INIT_FALSE;
 EXPORT_SYMBOL(cgroup_bpf_enabled_key);
 
 /**
+ * cgroup_bpf_init() - initialize the attached-program lists
+ * @cgrp: the cgroup to initialize
+ *
+ * Every cgroup, including a hierarchy's top cgroup before
+ * cgroup_bpf_inherit() runs, has valid empty lists, so cgroup_bpf_put()
+ * may run on any cgroup that reaches its last reference.
+ */
+void cgroup_bpf_init(struct cgroup *cgrp)
+{
+	unsigned int type;
+
+	for (type = 0; type < ARRAY_SIZE(cgrp->bpf.progs); type++)
+		INIT_LIST_HEAD(&cgrp->bpf.progs[type]);
+}
+
+/**
  * cgroup_bpf_put() - put references of all bpf programs
  * @cgrp: the cgroup to modify
  */

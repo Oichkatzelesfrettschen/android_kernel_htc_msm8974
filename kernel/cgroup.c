@@ -888,9 +888,11 @@ static int cgroup_call_pre_destroy(struct cgroup *cgrp)
 	return ret;
 }
 
+static void cgroup_drop_root(struct cgroupfs_root *root);
+
 static void cgroup_diput(struct dentry *dentry, struct inode *inode)
 {
-	/* is dentry a directory ? if so, kfree() associated cgroup */
+	/* a directory owns the base lifetime reference of its cgroup */
 	if (S_ISDIR(inode->i_mode)) {
 		struct cgroup *cgrp = dentry->d_fsdata;
 		struct cgroup_subsys *ss;
@@ -904,7 +906,6 @@ static void cgroup_diput(struct dentry *dentry, struct inode *inode)
 		synchronize_rcu();
 
 		mutex_lock(&cgroup_mutex);
-		cgroup_bpf_put(cgrp);
 		/*
 		 * Release the subsystem state objects.
 		 */
@@ -926,10 +927,44 @@ static void cgroup_diput(struct dentry *dentry, struct inode *inode)
 		 */
 		BUG_ON(!list_empty(&cgrp->pidlists));
 
-		kfree_rcu(cgrp, rcu_head);
+		cgroup_put(cgrp);
 	}
 	iput(inode);
 }
+
+/*
+ * Runs once the last lifetime reference is gone. cgroup_put() is reached
+ * from sk_free() in softirq context, and cgroup_bpf_put() takes
+ * cgroup_mutex and the static-key mutex, so the release runs from a work
+ * item. No socket, bpf map, file descriptor user or child points at @cgrp
+ * any more, so its programs are released and the memory is freed after an
+ * RCU grace period. A top cgroup is embedded in its cgroupfs_root, which
+ * is freed with it.
+ */
+static void cgroup_release_workfn(struct work_struct *work)
+{
+	struct cgroup *cgrp = container_of(work, struct cgroup, release_work);
+	struct cgroup *parent = cgrp->parent;
+
+	mutex_lock(&cgroup_mutex);
+	cgroup_bpf_put(cgrp);
+	mutex_unlock(&cgroup_mutex);
+
+	if (cgrp == cgrp->top_cgroup) {
+		cgroup_drop_root(cgrp->root);
+		return;
+	}
+
+	kfree_rcu(cgrp, rcu_head);
+	cgroup_put(parent);
+}
+
+void cgroup_put(struct cgroup *cgrp)
+{
+	if (atomic_dec_and_test(&cgrp->refcnt))
+		schedule_work(&cgrp->release_work);
+}
+EXPORT_SYMBOL_GPL(cgroup_put);
 
 static int cgroup_delete(const struct dentry *d)
 {
@@ -1368,6 +1403,9 @@ static const struct super_operations cgroup_ops = {
 
 static void init_cgroup_housekeeping(struct cgroup *cgrp)
 {
+	atomic_set(&cgrp->refcnt, 1);
+	INIT_WORK(&cgrp->release_work, cgroup_release_workfn);
+	cgroup_bpf_init(cgrp);
 	INIT_LIST_HEAD(&cgrp->sibling);
 	INIT_LIST_HEAD(&cgrp->children);
 	INIT_LIST_HEAD(&cgrp->css_sets);
@@ -1727,7 +1765,8 @@ static void cgroup_kill_sb(struct super_block *sb) {
 	mutex_unlock(&cgroup_mutex);
 
 	kill_litter_super(sb);
-	cgroup_drop_root(root);
+	/* the hierarchy is freed when its top cgroup's last reference drops */
+	cgroup_put(cgrp);
 }
 
 static struct file_system_type cgroup_fs_type = {
@@ -4002,6 +4041,9 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 	err = cgroup_populate_dir(cgrp);
 	/* If err < 0, we have a half-filled directory - oh well ;) */
 
+	/* a child keeps its parent readable until the child is freed */
+	cgroup_get(parent);
+
 	mutex_unlock(&cgroup_mutex);
 	mutex_unlock(&cgrp->dentry->d_inode->i_mutex);
 
@@ -4020,6 +4062,7 @@ static long cgroup_create(struct cgroup *parent, struct dentry *dentry,
 		if (cgrp->subsys[ss->subsys_id])
 			ss->destroy(cgrp);
 	}
+	cgroup_bpf_put(cgrp);
 
 	mutex_unlock(&cgroup_mutex);
 
@@ -5290,8 +5333,9 @@ struct cgroup *cgroup_get_from_fd(int fd)
 		return ERR_PTR(-EBADF);
 	}
 
+	/* the open directory pins the dentry and with it the base reference */
 	cgrp = __d_cgrp(f->f_dentry);
-	atomic_inc(&cgrp->count);
+	cgroup_get(cgrp);
 	fput(f);
 	return cgrp;
 
@@ -5325,7 +5369,7 @@ void cgroup_sk_alloc(struct cgroup **skcg)
 	if(bpfRoot){
 		mutex_lock(&cgroup_mutex);
 		cgrp = task_cgroup_from_root(current, bpfRoot);
-	        atomic_inc(&cgrp->count);
+		cgroup_get(cgrp);
 		mutex_unlock(&cgroup_mutex);
 		*skcg = cgrp;
 	}
@@ -5337,13 +5381,13 @@ void cgroup_sk_clone(struct cgroup *skcg)
 {
 	/* Socket clone path */
 	if (skcg)
-		atomic_inc(&skcg->count);
+		cgroup_get(skcg);
 }
 
 void cgroup_sk_free(struct cgroup *skcg)
 {
 	if (skcg)
-		atomic_dec(&skcg->count);
+		cgroup_put(skcg);
 }
 
 #ifdef CONFIG_CGROUP_BPF
