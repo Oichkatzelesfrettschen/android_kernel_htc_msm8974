@@ -19,6 +19,26 @@
 struct static_key cgroup_bpf_enabled_key = STATIC_KEY_INIT_FALSE;
 EXPORT_SYMBOL(cgroup_bpf_enabled_key);
 
+/*
+ * Every program in an effective array holds a reference of its own. rmdir
+ * unlinks a cgroup from its parent's children list while a socket's
+ * lifetime reference can keep it, and its effective arrays, in use; the
+ * subtree walk of a later attach or detach on an ancestor no longer reaches
+ * it, so the array keeps the programs it was built from alive until the
+ * cgroup itself is released. bpf_prog_put() frees a program after an RCU
+ * grace period, so a reader still walking a replaced array stays safe.
+ */
+static void effective_progs_free(struct bpf_prog_array __rcu *array)
+{
+	struct bpf_prog **prog;
+
+	if (!array)
+		return;
+	for (prog = rcu_dereference_protected(array, 1)->progs; *prog; prog++)
+		bpf_prog_put(*prog);
+	bpf_prog_array_free(array);
+}
+
 /**
  * cgroup_bpf_init() - initialize the attached-program lists
  * @cgrp: the cgroup to initialize
@@ -53,7 +73,7 @@ void cgroup_bpf_put(struct cgroup *cgrp)
 			kfree(pl);
 			static_key_slow_dec(&cgroup_bpf_enabled_key);
 		}
-		bpf_prog_array_free(cgrp->bpf.effective[type]);
+		effective_progs_free(cgrp->bpf.effective[type]);
 	}
 }
 
@@ -136,6 +156,10 @@ static int compute_effective_progs(struct cgroup *cgrp,
 					    &p->bpf.progs[type], node) {
 				if (!pl->prog)
 					continue;
+				if (IS_ERR(bpf_prog_inc(pl->prog))) {
+					effective_progs_free(progs);
+					return -EBUSY;
+				}
 				rcu_dereference_protected(progs, 1)->
 					progs[cnt++] = pl->prog;
 			}
@@ -156,7 +180,7 @@ static void activate_effective_progs(struct cgroup *cgrp,
 	/* free prog array after grace period, since __cgroup_bpf_run_*()
 	 * might be still walking the array
 	 */
-	bpf_prog_array_free(old_array);
+	effective_progs_free(old_array);
 }
 
 /**
@@ -185,7 +209,7 @@ int cgroup_bpf_inherit(struct cgroup *cgrp)
 	return 0;
 cleanup:
 	for (i = 0; i < NR; i++)
-		bpf_prog_array_free(arrays[i]);
+		effective_progs_free(arrays[i]);
 	return -ENOMEM;
 }
 
@@ -245,7 +269,7 @@ static int update_effective_progs(struct cgroup *cgrp,
 
 cleanup:
 	for_each_subtree_cgroup(desc, cgrp) {
-		bpf_prog_array_free(desc->bpf.inactive);
+		effective_progs_free(desc->bpf.inactive);
 		desc->bpf.inactive = NULL;
 	}
 	return err;
