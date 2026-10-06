@@ -391,15 +391,15 @@ static irqreturn_t msm_l1_erp_irq(int irq, void *dev_id)
 
 /*
  * L2ESR keeps an error's bits until software writes them back, so it can
- * hold a master port error latched by the boot chain before the kernel ran.
- * The machine's init_very_early hook calls this from setup_arch, after
- * setup_processor() and before paging_init(), SMP preparation, any initcall
- * and any SCM call, so the value read here predates every kernel access to
- * the bus. Its port error bits are recorded and cleared, which limits the
- * L2 handler's counters and WARN to errors the kernel raises; the value
- * stays readable in /proc/cpu/msm_cache_erp. A latched tag or data soft
- * error keeps its bits and the CPU field that reports it for the handler,
- * whose single- and double-bit policy applies.
+ * hold a master port error latched by the reset and boot chain before the
+ * kernel ran. The machine's init_very_early hook calls this from setup_arch,
+ * after setup_processor() and the device-tree and early-parameter parsing,
+ * and before paging_init(), SMP preparation, any initcall, any SCM call and
+ * any device access. Its port error bits are recorded and cleared, which
+ * limits the L2 handler's counters and WARN to errors the kernel raises;
+ * the value stays readable in /proc/cpu/msm_cache_erp. A latched tag or
+ * data soft error keeps its bits and the CPU field that reports it for the
+ * handler, whose single- and double-bit policy applies.
  */
 void __init msm_l2_boot_latch_record(void)
 {
