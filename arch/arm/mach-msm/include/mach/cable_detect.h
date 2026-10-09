@@ -87,7 +87,7 @@ struct cable_detect_platform_data {
 	void (*mhl_wakeup)(void);
 	int (*mhl_detect_register_notifier)(struct t_mhl_status_notifier *notifier);
 #endif
-	u8 mhl_reset_gpio;
+	int mhl_reset_gpio;
 	bool mhl_version_ctrl_flag;
 	struct usb_id_mpp_config_data mpp_data;
 	void (*config_usb_id_gpios)(bool enable);
