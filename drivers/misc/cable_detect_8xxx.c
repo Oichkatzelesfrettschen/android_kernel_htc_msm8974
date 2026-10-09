@@ -66,7 +66,7 @@ struct cable_detect_info {
 	__u8 accessory_type;
 	int idpin_irq;
 	u8 mfg_usb_carkit_enable;
-	u8 mhl_reset_gpio;
+	int mhl_reset_gpio;
 	bool mhl_version_ctrl_flag;
 	struct workqueue_struct *cable_detect_wq;
 	struct delayed_work cable_detect_work;
