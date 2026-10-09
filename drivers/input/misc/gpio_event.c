@@ -26,8 +26,8 @@
 struct gpio_event {
 	struct gpio_event_input_devs *input_devs;
 	const struct gpio_event_platform_data *info;
-	void *state[0];
 	uint8_t rrm1_mode;
+	void *state[];
 };
 
 static int gpio_input_event(
