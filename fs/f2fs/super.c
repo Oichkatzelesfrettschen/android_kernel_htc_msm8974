@@ -24,6 +24,7 @@
 #include <linux/blkdev.h>
 #include <linux/f2fs_fs.h>
 #include <linux/sysfs.h>
+#include <linux/writeback.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -738,6 +739,40 @@ static void f2fs_put_super(struct super_block *sb)
 
 	iput(sbi->node_inode);
 	iput(sbi->meta_inode);
+
+	/*
+	 * generic_shutdown_super()'s sync_filesystem() call, above us on the
+	 * stack, waits out writeback only for the inodes attached to sb at
+	 * that instant. evict_inodes() then skips any inode whose i_count is
+	 * still nonzero (a caller-forced unmount can reach here with such an
+	 * inode still open), so a page it dirties after that sync, or a
+	 * checkpoint-triggered write from iput() above, can still be queued
+	 * on sb->s_bdi's flusher thread when the frees below run. That
+	 * thread's write path (f2fs_write_data_page -> allocate_data_block ->
+	 * refresh_sit_entry -> update_sit_entry) reads sbi's segment manager,
+	 * so destroying it out from under a write in flight corrupts memory
+	 * update_sit_entry then dereferences. A busy inode's writeback can
+	 * keep arriving for as long as whatever still holds it open keeps
+	 * writing, not just once, so this wait_sb_inodes() pass only shrinks
+	 * that window; it does not close it.
+	 */
+	sync_inodes_sb(sb);
+
+	/*
+	 * f2fs_write_data_page() takes cp_rwsem for read around every call
+	 * into the segment manager once SBI_SM_DESTROYING is set, using a
+	 * trylock instead of the ordinary blocking f2fs_lock_op() so it
+	 * never runs past this point. Setting the flag and taking cp_rwsem
+	 * for write here, and never releasing it, makes that trylock fail
+	 * for any writeback that has not already entered its critical
+	 * section, and blocks this thread until any that already has
+	 * finishes -- closing the rest of the window sync_inodes_sb() only
+	 * narrowed. Nothing else ever acquires cp_rwsem after sbi is freed
+	 * below: an f2fs_sb_info instance that reaches this point never
+	 * returns to service another mount or checkpoint.
+	 */
+	set_sbi_flag(sbi, SBI_SM_DESTROYING);
+	down_write(&sbi->cp_rwsem);
 
 	/* destroy f2fs internal modules */
 	destroy_node_manager(sbi);
