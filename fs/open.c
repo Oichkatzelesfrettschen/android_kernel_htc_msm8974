@@ -993,6 +993,8 @@ struct file *file_open_name(struct filename *name, int flags, umode_t mode)
 {
 	struct open_flags op;
 	int lookup = build_open_flags(flags, mode, &op);
+	if (lookup < 0)
+		return ERR_PTR(lookup);
 	return do_filp_open(AT_FDCWD, name, &op, lookup);
 }
 
@@ -1019,6 +1021,8 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
 {
 	struct open_flags op;
 	int lookup = build_open_flags(flags, 0, &op);
+	if (lookup < 0)
+		return ERR_PTR(lookup);
 	if (flags & O_CREAT)
 		return ERR_PTR(-EINVAL);
 	if (!filename && (flags & O_DIRECTORY))
@@ -1032,8 +1036,13 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 {
 	struct open_flags op;
 	int lookup = build_open_flags(flags, mode, &op);
-	struct filename *tmp = getname(filename);
-	int fd = PTR_ERR(tmp);
+	struct filename *tmp;
+	int fd;
+
+	if (lookup < 0)
+		return lookup;
+	tmp = getname(filename);
+	fd = PTR_ERR(tmp);
 
 	if (!IS_ERR(tmp)) {
 		fd = get_unused_fd_flags(flags);
