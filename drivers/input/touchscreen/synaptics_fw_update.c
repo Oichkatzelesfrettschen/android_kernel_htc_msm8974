@@ -287,6 +287,7 @@ struct synaptics_rmi4_fwu_handle {
 	struct f34_flash_properties flash_properties;
 	struct workqueue_struct *fwu_workqueue;
 	struct delayed_work fwu_work;
+	struct dentry *debug_dump_info;
 	char image_name[NAME_BUFFER_SIZE];
 	struct image_content image_content;
 	char *ts_info;
@@ -2191,9 +2192,8 @@ static void synaptics_rmi4_fwu_work(struct work_struct *work)
 static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 {
 	int retval;
-	unsigned char attr_count;
+	int attr_count;
 	struct pdt_properties pdt_props;
-	struct dentry *temp;
 
 	fwu = kzalloc(sizeof(*fwu), GFP_KERNEL);
 	if (!fwu) {
@@ -2274,10 +2274,11 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 
 #ifdef INSIDE_FIRMWARE_UPDATE
 	fwu->fwu_workqueue = create_singlethread_workqueue("fwu_workqueue");
+	if (!fwu->fwu_workqueue) {
+		retval = -ENOMEM;
+		goto exit_free_mem;
+	}
 	INIT_DELAYED_WORK(&fwu->fwu_work, synaptics_rmi4_fwu_work);
-	queue_delayed_work(fwu->fwu_workqueue,
-			&fwu->fwu_work,
-			msecs_to_jiffies(1000));
 #endif
 
         retval = sysfs_create_bin_file(&rmi4_data->i2c_client->dev.kobj,
@@ -2286,7 +2287,7 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 		dev_err(&rmi4_data->i2c_client->dev,
 				"%s: Failed to create sysfs bin file\n",
 				__func__);
-		goto exit_free_mem;
+		goto exit_stop_work;
 	}
 
 	for (attr_count = 0; attr_count < ARRAY_SIZE(attrs); attr_count++) {
@@ -2301,25 +2302,37 @@ static int synaptics_rmi4_fwu_init(struct synaptics_rmi4_data *rmi4_data)
 		}
 	}
 
-	temp = debugfs_create_file("dump_info", S_IRUSR | S_IWUSR,
-			fwu->rmi4_data->dir, fwu->rmi4_data,
+	fwu->debug_dump_info = debugfs_create_file("dump_info",
+			S_IRUSR | S_IWUSR, fwu->rmi4_data->dir, fwu->rmi4_data,
 			&debug_dump_info_fops);
-	if (temp == NULL || IS_ERR(temp)) {
+	if (IS_ERR_OR_NULL(fwu->debug_dump_info)) {
 		dev_err(&rmi4_data->i2c_client->dev,
 			"%s: Failed to create debugfs dump info file\n",
 			__func__);
-		retval = PTR_ERR(temp);
+		retval = fwu->debug_dump_info ?
+			PTR_ERR(fwu->debug_dump_info) : -ENOMEM;
+		fwu->debug_dump_info = NULL;
 		goto exit_remove_attrs;
 	}
 
+#ifdef INSIDE_FIRMWARE_UPDATE
+	queue_delayed_work(fwu->fwu_workqueue, &fwu->fwu_work,
+			msecs_to_jiffies(1000));
+#endif
 	return 0;
 exit_remove_attrs:
-	for (attr_count--; attr_count >= 0; attr_count--) {
-		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
+	while (attr_count > 0) {
+		attr_count--;
+		sysfs_remove_file(&rmi4_data->i2c_client->dev.kobj,
 				&attrs[attr_count].attr);
 	}
 
-	sysfs_remove_bin_file(&rmi4_data->input_dev->dev.kobj, &dev_attr_data);
+	sysfs_remove_bin_file(&rmi4_data->i2c_client->dev.kobj, &dev_attr_data);
+
+exit_stop_work:
+#ifdef INSIDE_FIRMWARE_UPDATE
+	destroy_workqueue(fwu->fwu_workqueue);
+#endif
 
 exit_free_mem:
 	kfree(fwu->ts_info);
@@ -2335,18 +2348,25 @@ exit:
 
 static void synaptics_rmi4_fwu_remove(struct synaptics_rmi4_data *rmi4_data)
 {
-	unsigned char attr_count;
+	int attr_count;
 
-	sysfs_remove_bin_file(&rmi4_data->input_dev->dev.kobj, &dev_attr_data);
+	debugfs_remove(fwu->debug_dump_info);
+	sysfs_remove_bin_file(&rmi4_data->i2c_client->dev.kobj, &dev_attr_data);
 
 	for (attr_count = 0; attr_count < ARRAY_SIZE(attrs); attr_count++) {
-		sysfs_remove_file(&rmi4_data->input_dev->dev.kobj,
+		sysfs_remove_file(&rmi4_data->i2c_client->dev.kobj,
 				&attrs[attr_count].attr);
 	}
 
+#ifdef INSIDE_FIRMWARE_UPDATE
+	cancel_delayed_work_sync(&fwu->fwu_work);
+	destroy_workqueue(fwu->fwu_workqueue);
+#endif
+	kfree(fwu->ts_info);
 	kfree(fwu->read_config_buf);
 	kfree(fwu->fn_ptr);
 	kfree(fwu);
+	fwu = NULL;
 
 	complete(&fwu_remove_complete);
 
