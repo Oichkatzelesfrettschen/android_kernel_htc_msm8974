@@ -286,7 +286,11 @@ EXPORT_SYMBOL(param_set_charp);
 
 int param_get_charp(char *buffer, const struct kernel_param *kp)
 {
-	return sprintf(buffer, "%s", *((char **)kp->arg));
+	const char *value = *((char **)kp->arg);
+
+	/* A NULL charp prints "(null)", as vsnprintf does. Clang rewrites the
+	 * "%s" below to stpcpy(), which does not accept NULL. */
+	return sprintf(buffer, "%s", value ? value : "(null)");
 }
 EXPORT_SYMBOL(param_get_charp);
 
