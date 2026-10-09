@@ -62,7 +62,7 @@ struct dci_pkt_req_entry_t {
 	int uid;
 	int tag;
 	struct list_head track;
-} __packed;
+};
 
 struct diag_dci_reg_tbl_t {
 	uint32_t client_id;

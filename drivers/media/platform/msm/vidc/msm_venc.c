@@ -1522,9 +1522,9 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 		if (num_b) {
 			u32 max_num_b_frames = MAX_NUM_B_FRAMES;
 			property_id = HAL_PARAM_VENC_MAX_NUM_B_FRAMES;
-			pdata = &max_num_b_frames;
 			rc = call_hfi_op(hdev, session_set_property,
-				(void *)inst->session, property_id, pdata);
+				(void *)inst->session, property_id,
+				&max_num_b_frames);
 			if (rc) {
 				dprintk(VIDC_ERR,
 					"Failed : Setprop MAX_NUM_B_FRAMES %d",

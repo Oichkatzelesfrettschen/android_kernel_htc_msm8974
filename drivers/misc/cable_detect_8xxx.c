@@ -316,12 +316,13 @@ static void check_vbus_in(struct work_struct *w)
 
 		if (pInfo->ad_en_gpio) {
 			if (vbus) {
-				if (pInfo->ad_en_irq)
+				if (pInfo->ad_en_irq) {
 					CABLE_INFO("%s: Enable ad_en_irq ++\n", __func__);
 					enable_irq(pInfo->ad_en_irq);
-			} else {
-					CABLE_INFO("%s: Disable ad_en_irq --\n", __func__);
-					disable_irq_nosync(pInfo->ad_en_irq);
+				}
+			} else if (pInfo->ad_en_irq) {
+				CABLE_INFO("%s: Disable ad_en_irq --\n", __func__);
+				disable_irq_nosync(pInfo->ad_en_irq);
 			}
 		}
 	}

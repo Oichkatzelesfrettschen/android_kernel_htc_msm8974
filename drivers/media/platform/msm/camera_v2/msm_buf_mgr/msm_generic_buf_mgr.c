@@ -197,11 +197,6 @@ static const struct v4l2_subdev_ops msm_buf_mngr_subdev_ops = {
 	.core = &msm_buf_mngr_subdev_core_ops,
 };
 
-static const struct of_device_id msm_buf_mngr_dt_match[] = {
-	{.compatible = "qcom,msm_buf_mngr"},
-	{}
-};
-
 static int __init msm_buf_mngr_init(void)
 {
 	int rc = 0;
@@ -250,4 +245,3 @@ module_init(msm_buf_mngr_init);
 module_exit(msm_buf_mngr_exit);
 MODULE_DESCRIPTION("MSM Buffer Manager");
 MODULE_LICENSE("GPL v2");
-

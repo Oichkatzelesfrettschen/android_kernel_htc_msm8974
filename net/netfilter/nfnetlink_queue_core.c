@@ -33,6 +33,7 @@
 #include <net/netfilter/nfnetlink_queue.h>
 
 #include <linux/atomic.h>
+#include <asm/unaligned.h>
 
 #ifdef CONFIG_BRIDGE_NETFILTER
 #include "../bridge/br_private.h"
@@ -221,7 +222,7 @@ nfqnl_flush(struct nfqnl_instance *queue, nfqnl_cmpfn cmpfn, unsigned long data)
 static struct sk_buff *
 nfqnl_build_packet_message(struct nfqnl_instance *queue,
 			   struct nf_queue_entry *entry,
-			   __be32 **packet_id_ptr)
+			   u8 **packet_id_ptr)
 {
 	sk_buff_data_t old_tail;
 	size_t size;
@@ -291,7 +292,8 @@ nfqnl_build_packet_message(struct nfqnl_instance *queue,
 	pmsg = nla_data(nla);
 	pmsg->hw_protocol	= entskb->protocol;
 	pmsg->hook		= entry->hook;
-	*packet_id_ptr		= &pmsg->packet_id;
+	*packet_id_ptr		= (u8 *)pmsg +
+				  offsetof(struct nfqnl_msg_packet_hdr, packet_id);
 
 	indev = entry->indev;
 	if (indev) {
@@ -409,7 +411,7 @@ nfqnl_enqueue_packet(struct nf_queue_entry *entry, unsigned int queuenum)
 	struct sk_buff *nskb;
 	struct nfqnl_instance *queue;
 	int err = -ENOBUFS;
-	__be32 *packet_id_ptr;
+	u8 *packet_id_ptr;
 	int failopen = 0;
 
 	/* rcu_read_lock()ed by nf_hook_slow() */
@@ -449,7 +451,7 @@ nfqnl_enqueue_packet(struct nf_queue_entry *entry, unsigned int queuenum)
 		goto err_out_free_nskb;
 	}
 	entry->id = ++queue->id_sequence;
-	*packet_id_ptr = htonl(entry->id);
+	put_unaligned_be32(entry->id, packet_id_ptr);
 
 	/* nfnetlink_unicast will either free the nskb or add it to a socket */
 	err = nfnetlink_unicast(nskb, &init_net, queue->peer_pid, MSG_DONTWAIT);

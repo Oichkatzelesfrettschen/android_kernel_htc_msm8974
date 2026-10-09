@@ -581,11 +581,11 @@ static int bos_desc(struct usb_composite_dev *cdev)
 	struct usb_ss_cap_descriptor	*ss_cap;
 	struct usb_dcd_config_params	dcd_config_params;
 	struct usb_bos_descriptor	*bos = cdev->req->buf;
+	unsigned int total_length = USB_DT_BOS_SIZE;
 
 	bos->bLength = USB_DT_BOS_SIZE;
 	bos->bDescriptorType = USB_DT_BOS;
 
-	bos->wTotalLength = cpu_to_le16(USB_DT_BOS_SIZE);
 	bos->bNumDeviceCaps = 0;
 
 	/*
@@ -593,9 +593,9 @@ static int bos_desc(struct usb_composite_dev *cdev)
 	 * and shall support LPM when operating in USB2.0 HS mode, as well as
 	 * a HS device when operating in USB2.1 HS mode.
 	 */
-	usb_ext = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
+	usb_ext = cdev->req->buf + total_length;
 	bos->bNumDeviceCaps++;
-	le16_add_cpu(&bos->wTotalLength, USB_DT_USB_EXT_CAP_SIZE);
+	total_length += USB_DT_USB_EXT_CAP_SIZE;
 	usb_ext->bLength = USB_DT_USB_EXT_CAP_SIZE;
 	usb_ext->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
 	usb_ext->bDevCapabilityType = USB_CAP_TYPE_EXT;
@@ -606,9 +606,9 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		 * The Superspeed USB Capability descriptor shall be
 		 * implemented by all SuperSpeed devices.
 		 */
-		ss_cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
+		ss_cap = cdev->req->buf + total_length;
 		bos->bNumDeviceCaps++;
-		le16_add_cpu(&bos->wTotalLength, USB_DT_USB_SS_CAP_SIZE);
+		total_length += USB_DT_USB_SS_CAP_SIZE;
 		ss_cap->bLength = USB_DT_USB_SS_CAP_SIZE;
 		ss_cap->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
 		ss_cap->bDevCapabilityType = USB_SS_CAP_TYPE;
@@ -633,7 +633,8 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		ss_cap->bU2DevExitLat = dcd_config_params.bU2DevExitLat;
 	}
 
-	return le16_to_cpu(bos->wTotalLength);
+	bos->wTotalLength = cpu_to_le16(total_length);
+	return total_length;
 }
 
 static void device_qual(struct usb_composite_dev *cdev)
@@ -991,31 +992,33 @@ static int get_string(struct usb_composite_dev *cdev,
 	if (id == 0) {
 		struct usb_string_descriptor	*s = buf;
 		struct usb_gadget_strings	**sp;
+		__le16 languages[127] = { 0 };
 
 		memset(s, 0, 256);
 		s->bDescriptorType = USB_DT_STRING;
 
 		sp = composite->strings;
 		if (sp)
-			collect_langs(sp, s->wData);
+			collect_langs(sp, languages);
 
 		list_for_each_entry(c, &cdev->configs, list) {
 			sp = c->strings;
 			if (sp)
-				collect_langs(sp, s->wData);
+				collect_langs(sp, languages);
 
 			list_for_each_entry(f, &c->functions, list) {
 				sp = f->strings;
 				if (sp)
-					collect_langs(sp, s->wData);
+					collect_langs(sp, languages);
 			}
 		}
 
-		for (len = 0; len <= 126 && s->wData[len]; len++)
+		for (len = 0; len <= 126 && languages[len]; len++)
 			continue;
-		if (!len)
+		if (!len || len > 126)
 			return -EINVAL;
 
+		memcpy(s->wData, languages, len * sizeof(languages[0]));
 		s->bLength = 2 * (len + 1);
 		return s->bLength;
 	}
@@ -1644,7 +1647,7 @@ static int composite_bind(struct usb_gadget *gadget)
 	if (iManufacturer || !cdev->desc.iManufacturer) {
 		if (!iManufacturer && !composite->iManufacturer &&
 		    !*composite_manufacturer)
-			snprintf(composite_manufacturer,
+			scnprintf(composite_manufacturer,
 				 sizeof composite_manufacturer,
 				 "%s %s with %s",
 				 init_utsname()->sysname,
@@ -1851,4 +1854,3 @@ void usb_composite_setup_continue(struct usb_composite_dev *cdev)
 		}
 	}
 }
-

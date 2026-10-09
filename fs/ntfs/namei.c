@@ -185,7 +185,8 @@ handle_name:
 	if (name->type != FILE_NAME_DOS) {			/* Case 2. */
 		ntfs_debug("Case 2.");
 		nls_name.len = (unsigned)ntfs_ucstonls(vol,
-				(ntfschar*)&name->name, name->len,
+				(ntfschar *)((u8 *)name + offsetof(ntfs_name, name)),
+				name->len,
 				(unsigned char**)&nls_name.name, 0);
 		kfree(name);
 	} else /* if (name->type == FILE_NAME_DOS) */ {		/* Case 3. */
@@ -239,7 +240,9 @@ handle_name:
 
 		/* Convert the found WIN32 name to current NLS code page. */
 		nls_name.len = (unsigned)ntfs_ucstonls(vol,
-				(ntfschar*)&fn->file_name, fn->file_name_length,
+				(ntfschar *)((u8 *)fn +
+					offsetof(FILE_NAME_ATTR, file_name)),
+				fn->file_name_length,
 				(unsigned char**)&nls_name.name, 0);
 
 		ntfs_attr_put_search_ctx(ctx);

@@ -272,7 +272,7 @@ static ssize_t msm_pm_mode_attr_store(struct kobject *kobj,
 static int msm_pm_mode_sysfs_add_cpu(
 	unsigned int cpu, struct kobject *modes_kobj)
 {
-	char cpu_name[8];
+	char cpu_name[16];
 	struct kobject *cpu_kobj;
 	struct msm_pm_sysfs_sleep_mode *mode = NULL;
 	int i, j, k;

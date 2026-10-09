@@ -552,7 +552,7 @@ const struct file_operations msm_cpufreq_fops = {
 static int __init msm_cpufreq_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	char clk_name[] = "cpu??_clk";
+	char clk_name[20];
 	struct clk *c;
 	int cpu, ret;
 

@@ -140,8 +140,9 @@ int ablk_init(struct crypto_tfm *tfm)
 {
 	char drv_name[CRYPTO_MAX_ALG_NAME];
 
-	snprintf(drv_name, sizeof(drv_name), "__driver-%s",
-					crypto_tfm_alg_driver_name(tfm));
+	if (snprintf(drv_name, sizeof(drv_name), "__driver-%s",
+			 crypto_tfm_alg_driver_name(tfm)) >= sizeof(drv_name))
+		return -ENAMETOOLONG;
 
 	return ablk_init_common(tfm, drv_name);
 }

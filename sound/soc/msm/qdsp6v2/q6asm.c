@@ -66,12 +66,12 @@ struct asm_buffer_node {
 };
 static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv);
 static int32_t q6asm_callback(struct apr_client_data *data, void *priv);
-static void q6asm_add_hdr(struct audio_client *ac, struct apr_hdr *hdr,
+static void q6asm_add_hdr(struct audio_client *ac, void *packet,
 			uint32_t pkt_size, uint32_t cmd_flg);
 static void q6asm_add_hdr_custom_topology(struct audio_client *ac,
-					  struct apr_hdr *hdr,
+					  void *packet,
 					  uint32_t pkt_size, uint32_t cmd_flg);
-static void q6asm_add_hdr_async(struct audio_client *ac, struct apr_hdr *hdr,
+static void q6asm_add_hdr_async(struct audio_client *ac, void *packet,
 			uint32_t pkt_size, uint32_t cmd_flg);
 static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 				uint32_t bufsz, uint32_t bufcnt,
@@ -121,7 +121,7 @@ int q6asm_enable_effect(struct audio_client *ac, uint32_t module_id,
 		return -ENOMEM;
 	}
 
-	q6asm_add_hdr(ac, &pasm->hdr, sz, TRUE);
+	q6asm_add_hdr(ac, pasm, sz, TRUE);
 
 	pasm->hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 	pasm->param.data_payload_addr_lsw = 0;
@@ -457,7 +457,7 @@ static void q6asm_session_free(struct audio_client *ac)
 void send_asm_custom_topology(struct audio_client *ac)
 {
 	struct acdb_cal_block		cal_block;
-	struct cmd_set_topologies	asm_top;
+	struct cmd_set_topologies	asm_top __aligned(4);
 	struct asm_buffer_node		*buf_node = NULL;
 	struct list_head		*ptr, *next;
 	int				result;
@@ -511,7 +511,7 @@ void send_asm_custom_topology(struct audio_client *ac)
 		}
 	}
 
-	q6asm_add_hdr_custom_topology(ac, &asm_top.hdr,
+	q6asm_add_hdr_custom_topology(ac, &asm_top,
 				      APR_PKT_SIZE(APR_HDR_SIZE,
 					sizeof(asm_top)), TRUE);
 	atomic_set(&ac->mem_state, 1);
@@ -1731,9 +1731,13 @@ int q6asm_is_dsp_buf_avail(int dir, struct audio_client *ac)
 	return ret;
 }
 
-static void __q6asm_add_hdr(struct audio_client *ac, struct apr_hdr *hdr,
+/* Packed APR packets keep their wire layout; headers use aligned local storage. */
+static void __q6asm_add_hdr(struct audio_client *ac, void *packet,
 			uint32_t pkt_size, uint32_t cmd_flg, uint32_t stream_id)
 {
+	struct apr_hdr header = { 0 };
+	struct apr_hdr *hdr = &header;
+
 	pr_debug("%s:pkt_size=%d cmd_flg=%d session=%d stream_id=%d\n",
 		 __func__, pkt_size, cmd_flg, ac->session, stream_id);
 	if (ac->apr == NULL) {
@@ -1755,27 +1759,31 @@ static void __q6asm_add_hdr(struct audio_client *ac, struct apr_hdr *hdr,
 		hdr->token = ac->session;
 	}
 	hdr->pkt_size  = pkt_size;
+	memcpy(packet, hdr, sizeof(*hdr));
 	mutex_unlock(&ac->cmd_lock);
 	return;
 }
 
-static void q6asm_add_hdr(struct audio_client *ac, struct apr_hdr *hdr,
+static void q6asm_add_hdr(struct audio_client *ac, void *packet,
 			uint32_t pkt_size, uint32_t cmd_flg)
 {
-	__q6asm_add_hdr(ac, hdr, pkt_size, cmd_flg, ac->stream_id);
+	__q6asm_add_hdr(ac, packet, pkt_size, cmd_flg, ac->stream_id);
 	return;
 }
 
-static void q6asm_stream_add_hdr(struct audio_client *ac, struct apr_hdr *hdr,
+static void q6asm_stream_add_hdr(struct audio_client *ac, void *packet,
 			uint32_t pkt_size, uint32_t cmd_flg, int32_t stream_id)
 {
-	__q6asm_add_hdr(ac, hdr, pkt_size, cmd_flg, stream_id);
+	__q6asm_add_hdr(ac, packet, pkt_size, cmd_flg, stream_id);
 	return;
 }
 
-static void __q6asm_add_hdr_async(struct audio_client *ac, struct apr_hdr *hdr,
+static void __q6asm_add_hdr_async(struct audio_client *ac, void *packet,
 			uint32_t pkt_size, uint32_t cmd_flg, uint32_t stream_id)
 {
+	struct apr_hdr header = { 0 };
+	struct apr_hdr *hdr = &header;
+
 	pr_debug("%s pkt_size = %d, cmd_flg = %d, session = %d stream_id=%d\n",
 		__func__, pkt_size, cmd_flg, ac->session, stream_id);
 	hdr->hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD, \
@@ -1795,28 +1803,32 @@ static void __q6asm_add_hdr_async(struct audio_client *ac, struct apr_hdr *hdr,
 		hdr->token = ac->session;
 	}
 	hdr->pkt_size  = pkt_size;
+	memcpy(packet, hdr, sizeof(*hdr));
 	return;
 }
 
-static void q6asm_add_hdr_async(struct audio_client *ac, struct apr_hdr *hdr,
+static void q6asm_add_hdr_async(struct audio_client *ac, void *packet,
 				uint32_t pkt_size, uint32_t cmd_flg)
 {
-	__q6asm_add_hdr_async(ac, hdr, pkt_size, cmd_flg, ac->stream_id);
+	__q6asm_add_hdr_async(ac, packet, pkt_size, cmd_flg, ac->stream_id);
 	return;
 }
 
 static void q6asm_stream_add_hdr_async(struct audio_client *ac,
-					struct apr_hdr *hdr, uint32_t pkt_size,
+					void *packet, uint32_t pkt_size,
 					uint32_t cmd_flg, int32_t stream_id)
 {
-	__q6asm_add_hdr_async(ac, hdr, pkt_size, cmd_flg, stream_id);
+	__q6asm_add_hdr_async(ac, packet, pkt_size, cmd_flg, stream_id);
 	return;
 }
 
 static void q6asm_add_hdr_custom_topology(struct audio_client *ac,
-					  struct apr_hdr *hdr,
+					  void *packet,
 					  uint32_t pkt_size, uint32_t cmd_flg)
 {
+	struct apr_hdr header = { 0 };
+	struct apr_hdr *hdr = &header;
+
 	pr_debug("%s:pkt_size=%d cmd_flg=%d session=%d\n", __func__, pkt_size,
 		cmd_flg, ac->session);
 	if (ac->apr == NULL) {
@@ -1838,13 +1850,17 @@ static void q6asm_add_hdr_custom_topology(struct audio_client *ac,
 		hdr->token = ((ac->session << 8) | 0x0001) ;
 	}
 	hdr->pkt_size  = pkt_size;
+	memcpy(packet, hdr, sizeof(*hdr));
 	mutex_unlock(&ac->cmd_lock);
 	return;
 }
 
-static void q6asm_add_mmaphdr(struct audio_client *ac, struct apr_hdr *hdr,
+static void q6asm_add_mmaphdr(struct audio_client *ac, void *packet,
 			u32 pkt_size, u32 cmd_flg, u32 token)
 {
+	struct apr_hdr header = { 0 };
+	struct apr_hdr *hdr = &header;
+
 	pr_debug("%s:pkt size=%d cmd_flg=%d\n", __func__, pkt_size, cmd_flg);
 	hdr->hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD, \
 				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
@@ -1854,13 +1870,14 @@ static void q6asm_add_mmaphdr(struct audio_client *ac, struct apr_hdr *hdr,
 		hdr->token = token;
 	}
 	hdr->pkt_size  = pkt_size;
+	memcpy(packet, hdr, sizeof(*hdr));
 	return;
 }
 static int __q6asm_open_read(struct audio_client *ac,
 		uint32_t format, uint16_t bits_per_sample)
 {
 	int rc = 0x00;
-	struct asm_stream_cmd_open_read_v3 open;
+	struct asm_stream_cmd_open_read_v3 open __aligned(4);
 
 	config_debug_fs_reset_index();
 
@@ -1870,7 +1887,7 @@ static int __q6asm_open_read(struct audio_client *ac,
 	}
 	pr_debug("%s:session[%d]", __func__, ac->session);
 
-	q6asm_add_hdr(ac, &open.hdr, sizeof(open), TRUE);
+	q6asm_add_hdr(ac, &open, sizeof(open), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	open.hdr.opcode = ASM_STREAM_CMD_OPEN_READ_V3;
 	/* Stream prio : High, provide meta info with encoded frames */
@@ -1955,7 +1972,7 @@ static int __q6asm_open_write(struct audio_client *ac, uint32_t format,
 				bool is_gapless_mode)
 {
 	int rc = 0x00;
-	struct asm_stream_cmd_open_write_v3 open;
+	struct asm_stream_cmd_open_write_v3 open __aligned(4);
 
 	if ((ac == NULL) || (ac->apr == NULL)) {
 		pr_err("%s: APR handle NULL\n", __func__);
@@ -1964,7 +1981,7 @@ static int __q6asm_open_write(struct audio_client *ac, uint32_t format,
 	pr_debug("%s: session[%d] wr_format[0x%x] bits_per_sample %d stream_id %d, ac->io_mode=%d",
 		__func__, ac->session, format, bits_per_sample, stream_id, ac->io_mode);
 
-	q6asm_stream_add_hdr(ac, &open.hdr, sizeof(open), TRUE, stream_id);
+	q6asm_stream_add_hdr(ac, &open, sizeof(open), TRUE, stream_id);
 	atomic_set(&ac->cmd_state, 1);
 	/*
 	 * Updated the token field with stream/session for compressed playback
@@ -2080,7 +2097,7 @@ int q6asm_open_read_write(struct audio_client *ac,
 			uint32_t wr_format)
 {
 	int rc = 0x00;
-	struct asm_stream_cmd_open_readwrite_v2 open;
+	struct asm_stream_cmd_open_readwrite_v2 open __aligned(4);
 
 	if ((ac == NULL) || (ac->apr == NULL)) {
 		pr_err("%s: APR handle NULL\n", __func__);
@@ -2091,7 +2108,7 @@ int q6asm_open_read_write(struct audio_client *ac,
 				wr_format, rd_format);
 
 	ac->io_mode |= NT_MODE;
-	q6asm_add_hdr(ac, &open.hdr, sizeof(open), TRUE);
+	q6asm_add_hdr(ac, &open, sizeof(open), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	open.hdr.opcode = ASM_STREAM_CMD_OPEN_READWRITE_V2;
 
@@ -2193,7 +2210,7 @@ fail_cmd:
 int q6asm_open_loopback_v2(struct audio_client *ac, uint16_t bits_per_sample)
 {
 	int rc = 0x00;
-	struct asm_stream_cmd_open_loopback_v2 open;
+	struct asm_stream_cmd_open_loopback_v2 open __aligned(4);
 
 	if ((ac == NULL) || (ac->apr == NULL)) {
 		pr_err("%s APR handle NULL\n", __func__);
@@ -2201,7 +2218,7 @@ int q6asm_open_loopback_v2(struct audio_client *ac, uint16_t bits_per_sample)
 	}
 	pr_debug("%s: session[%d]", __func__, ac->session);
 
-	q6asm_add_hdr(ac, &open.hdr, sizeof(open), TRUE);
+	q6asm_add_hdr(ac, &open, sizeof(open), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	open.hdr.opcode = ASM_STREAM_CMD_OPEN_LOOPBACK_V2;
 
@@ -2237,14 +2254,14 @@ fail_cmd:
 int q6asm_run(struct audio_client *ac, uint32_t flags,
 		uint32_t msw_ts, uint32_t lsw_ts)
 {
-	struct asm_session_cmd_run_v2 run;
+	struct asm_session_cmd_run_v2 run __aligned(4);
 	int rc;
 	if (!ac || ac->apr == NULL) {
 		pr_err("%s: APR handle NULL\n", __func__);
 		return -EINVAL;
 	}
 	pr_debug("%s session[%d]", __func__, ac->session);
-	q6asm_add_hdr(ac, &run.hdr, sizeof(run), TRUE);
+	q6asm_add_hdr(ac, &run, sizeof(run), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	run.hdr.opcode = ASM_SESSION_CMD_RUN_V2;
@@ -2275,14 +2292,14 @@ fail_cmd:
 static int __q6asm_run_nowait(struct audio_client *ac, uint32_t flags,
 		uint32_t msw_ts, uint32_t lsw_ts, uint32_t stream_id)
 {
-	struct asm_session_cmd_run_v2 run;
+	struct asm_session_cmd_run_v2 run __aligned(4);
 	int rc;
 	if (!ac || ac->apr == NULL) {
 		pr_err("%s:APR handle NULL\n", __func__);
 		return -EINVAL;
 	}
 	pr_debug("session[%d] stream %d", ac->session, stream_id);
-	q6asm_stream_add_hdr_async(ac, &run.hdr, sizeof(run), TRUE, stream_id);
+	q6asm_stream_add_hdr_async(ac, &run, sizeof(run), TRUE, stream_id);
 	atomic_set(&ac->cmd_state, 1);
 	run.hdr.opcode = ASM_SESSION_CMD_RUN_V2;
 	run.flags    = flags;
@@ -2317,14 +2334,14 @@ int q6asm_enc_cfg_blk_aac(struct audio_client *ac,
 			uint32_t sample_rate, uint32_t channels,
 			uint32_t bit_rate, uint32_t mode, uint32_t format)
 {
-	struct asm_aac_enc_cfg_v2 enc_cfg;
+	struct asm_aac_enc_cfg_v2 enc_cfg __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]frames[%d]SR[%d]ch[%d]bitrate[%d]mode[%d] format[%d]",
 		 __func__, ac->session, frames_per_buf,
 		sample_rate, channels, bit_rate, mode, format);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
@@ -2360,12 +2377,12 @@ fail_cmd:
 int q6asm_set_encdec_chan_map(struct audio_client *ac,
 			uint32_t num_channels)
 {
-	struct asm_dec_out_chan_map_param chan_map;
+	struct asm_dec_out_chan_map_param chan_map __aligned(4);
 	u8 *channel_mapping;
 	int rc = 0;
 	pr_debug("%s: Session %d, num_channels = %d\n",
 			 __func__, ac->session, num_channels);
-	q6asm_add_hdr(ac, &chan_map.hdr, sizeof(chan_map), TRUE);
+	q6asm_add_hdr(ac, &chan_map, sizeof(chan_map), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	chan_map.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	chan_map.encdec.param_id = ASM_PARAM_ID_DEC_OUTPUT_CHAN_MAP;
@@ -2401,7 +2418,7 @@ fail_cmd:
 static int __q6asm_enc_cfg_blk_pcm(struct audio_client *ac,
 		uint32_t rate, uint32_t channels, uint16_t bits_per_sample)
 {
-	struct asm_multi_channel_pcm_enc_cfg_v2  enc_cfg;
+	struct asm_multi_channel_pcm_enc_cfg_v2  enc_cfg __aligned(4);
 	u8 *channel_mapping;
 	u32 frames_per_buf = 0;
 
@@ -2410,7 +2427,7 @@ static int __q6asm_enc_cfg_blk_pcm(struct audio_client *ac,
 	pr_debug("%s: Session %d, rate = %d, channels = %d\n", __func__,
 			 ac->session, rate, channels);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	enc_cfg.encdec.param_id = ASM_PARAM_ID_ENCDEC_ENC_CFG_BLK_V2;
@@ -2463,7 +2480,7 @@ int q6asm_enc_cfg_blk_pcm_format_support(struct audio_client *ac,
 int q6asm_enc_cfg_blk_pcm_native(struct audio_client *ac,
 			uint32_t rate, uint32_t channels)
 {
-	struct asm_multi_channel_pcm_enc_cfg_v2  enc_cfg;
+	struct asm_multi_channel_pcm_enc_cfg_v2  enc_cfg __aligned(4);
 	u8 *channel_mapping;
 	u32 frames_per_buf = 0;
 
@@ -2472,7 +2489,7 @@ int q6asm_enc_cfg_blk_pcm_native(struct audio_client *ac,
 	pr_debug("%s: Session %d, rate = %d, channels = %d\n", __func__,
 			 ac->session, rate, channels);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	enc_cfg.encdec.param_id = ASM_PARAM_ID_ENCDEC_ENC_CFG_BLK_V2;
@@ -2564,14 +2581,14 @@ static int q6asm_map_channels(u8 *channel_mapping, uint32_t channels)
 int q6asm_enable_sbrps(struct audio_client *ac,
 			uint32_t sbr_ps_enable)
 {
-	struct asm_aac_sbr_ps_flag_param  sbrps;
+	struct asm_aac_sbr_ps_flag_param  sbrps __aligned(4);
 	u32 frames_per_buf = 0;
 
 	int rc = 0;
 
 	pr_debug("%s: Session %d\n", __func__, ac->session);
 
-	q6asm_add_hdr(ac, &sbrps.hdr, sizeof(sbrps), TRUE);
+	q6asm_add_hdr(ac, &sbrps, sizeof(sbrps), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	sbrps.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
@@ -2606,14 +2623,14 @@ fail_cmd:
 int q6asm_cfg_dual_mono_aac(struct audio_client *ac,
 			uint16_t sce_left, uint16_t sce_right)
 {
-	struct asm_aac_dual_mono_mapping_param dual_mono;
+	struct asm_aac_dual_mono_mapping_param dual_mono __aligned(4);
 
 	int rc = 0;
 
 	pr_debug("%s: Session %d, sce_left = %d, sce_right = %d\n",
 			 __func__, ac->session, sce_left, sce_right);
 
-	q6asm_add_hdr(ac, &dual_mono.hdr, sizeof(dual_mono), TRUE);
+	q6asm_add_hdr(ac, &dual_mono, sizeof(dual_mono), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	dual_mono.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
@@ -2646,10 +2663,10 @@ fail_cmd:
 /* Support for selecting stereo mixing coefficients for B family not done */
 int q6asm_cfg_aac_sel_mix_coef(struct audio_client *ac, uint32_t mix_coeff)
 {
-	struct asm_aac_stereo_mix_coeff_selection_param_v2 aac_mix_coeff;
+	struct asm_aac_stereo_mix_coeff_selection_param_v2 aac_mix_coeff __aligned(4);
 	int rc = 0;
 
-	q6asm_add_hdr(ac, &aac_mix_coeff.hdr, sizeof(aac_mix_coeff), TRUE);
+	q6asm_add_hdr(ac, &aac_mix_coeff, sizeof(aac_mix_coeff), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	aac_mix_coeff.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	aac_mix_coeff.param_id =
@@ -2682,7 +2699,7 @@ int q6asm_enc_cfg_blk_qcelp(struct audio_client *ac, uint32_t frames_per_buf,
 		uint16_t min_rate, uint16_t max_rate,
 		uint16_t reduced_rate_level, uint16_t rate_modulation_cmd)
 {
-	struct asm_v13k_enc_cfg enc_cfg;
+	struct asm_v13k_enc_cfg enc_cfg __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]frames[%d]min_rate[0x%4x]max_rate[0x%4x] reduced_rate_level[0x%4x]rate_modulation_cmd[0x%4x]",
@@ -2690,7 +2707,7 @@ int q6asm_enc_cfg_blk_qcelp(struct audio_client *ac, uint32_t frames_per_buf,
 		ac->session, frames_per_buf, min_rate, max_rate,
 		reduced_rate_level, rate_modulation_cmd);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	enc_cfg.encdec.param_id = ASM_PARAM_ID_ENCDEC_ENC_CFG_BLK_V2;
@@ -2725,14 +2742,14 @@ int q6asm_enc_cfg_blk_evrc(struct audio_client *ac, uint32_t frames_per_buf,
 		uint16_t min_rate, uint16_t max_rate,
 		uint16_t rate_modulation_cmd)
 {
-	struct asm_evrc_enc_cfg enc_cfg;
+	struct asm_evrc_enc_cfg enc_cfg __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]frames[%d]min_rate[0x%4x]max_rate[0x%4x] rate_modulation_cmd[0x%4x]",
 		 __func__, ac->session,
 		frames_per_buf,	min_rate, max_rate, rate_modulation_cmd);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	enc_cfg.encdec.param_id = ASM_PARAM_ID_ENCDEC_ENC_CFG_BLK_V2;
@@ -2766,13 +2783,13 @@ fail_cmd:
 int q6asm_enc_cfg_blk_amrnb(struct audio_client *ac, uint32_t frames_per_buf,
 			uint16_t band_mode, uint16_t dtx_enable)
 {
-	struct asm_amrnb_enc_cfg enc_cfg;
+	struct asm_amrnb_enc_cfg enc_cfg __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]frames[%d]band_mode[0x%4x]dtx_enable[0x%4x]",
 		__func__, ac->session, frames_per_buf, band_mode, dtx_enable);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	enc_cfg.encdec.param_id = ASM_PARAM_ID_ENCDEC_ENC_CFG_BLK_V2;
@@ -2804,13 +2821,13 @@ fail_cmd:
 int q6asm_enc_cfg_blk_amrwb(struct audio_client *ac, uint32_t frames_per_buf,
 			uint16_t band_mode, uint16_t dtx_enable)
 {
-	struct asm_amrwb_enc_cfg enc_cfg;
+	struct asm_amrwb_enc_cfg enc_cfg __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]frames[%d]band_mode[0x%4x]dtx_enable[0x%4x]",
 		__func__, ac->session, frames_per_buf, band_mode, dtx_enable);
 
-	q6asm_add_hdr(ac, &enc_cfg.hdr, sizeof(enc_cfg), TRUE);
+	q6asm_add_hdr(ac, &enc_cfg, sizeof(enc_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	enc_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	enc_cfg.encdec.param_id = ASM_PARAM_ID_ENCDEC_ENC_CFG_BLK_V2;
@@ -2844,14 +2861,14 @@ static int __q6asm_media_format_block_pcm(struct audio_client *ac,
 				uint32_t rate, uint32_t channels,
 				uint16_t bits_per_sample)
 {
-	struct asm_multi_channel_pcm_fmt_blk_v2 fmt;
+	struct asm_multi_channel_pcm_fmt_blk_v2 fmt __aligned(4);
 	u8 *channel_mapping;
 	int rc = 0;
 
 	pr_debug("%s:session[%d]rate[%d]ch[%d]\n", __func__, ac->session, rate,
 		channels);
 
-	q6asm_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE);
+	q6asm_add_hdr(ac, &fmt, sizeof(fmt), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	fmt.hdr.opcode = ASM_DATA_CMD_MEDIA_FMT_UPDATE_V2;
@@ -2908,14 +2925,14 @@ static int __q6asm_media_format_block_multi_ch_pcm(struct audio_client *ac,
 				bool use_default_chmap, char *channel_map,
 				uint16_t bits_per_sample)
 {
-	struct asm_multi_channel_pcm_fmt_blk_v2 fmt;
+	struct asm_multi_channel_pcm_fmt_blk_v2 fmt __aligned(4);
 	u8 *channel_mapping;
 	int rc = 0;
 
 	pr_debug("%s:session[%d]rate[%d]ch[%d]\n", __func__, ac->session, rate,
 		channels);
 
-	q6asm_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE);
+	q6asm_add_hdr(ac, &fmt, sizeof(fmt), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	fmt.hdr.opcode = ASM_DATA_CMD_MEDIA_FMT_UPDATE_V2;
@@ -2978,13 +2995,13 @@ int q6asm_media_format_block_multi_ch_pcm_v2(
 static int __q6asm_media_format_block_multi_aac(struct audio_client *ac,
 				struct asm_aac_cfg *cfg, int stream_id)
 {
-	struct asm_aac_fmt_blk_v2 fmt;
+	struct asm_aac_fmt_blk_v2 fmt __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]rate[%d]ch[%d]\n", __func__, ac->session,
 		cfg->sample_rate, cfg->ch_cfg);
 
-	q6asm_stream_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE, stream_id);
+	q6asm_stream_add_hdr(ac, &fmt, sizeof(fmt), TRUE, stream_id);
 	atomic_set(&ac->cmd_state, 1);
 	/*
 	 * Updated the token field with stream/session for compressed playback
@@ -3050,7 +3067,7 @@ int q6asm_stream_media_format_block_aac(struct audio_client *ac,
 int q6asm_media_format_block_wma(struct audio_client *ac,
 				void *cfg)
 {
-	struct asm_wmastdv9_fmt_blk_v2 fmt;
+	struct asm_wmastdv9_fmt_blk_v2 fmt __aligned(4);
 	struct asm_wma_cfg *wma_cfg = (struct asm_wma_cfg *)cfg;
 	int rc = 0;
 
@@ -3060,7 +3077,7 @@ int q6asm_media_format_block_wma(struct audio_client *ac,
 		wma_cfg->block_align, wma_cfg->valid_bits_per_sample,
 		wma_cfg->ch_mask, wma_cfg->encode_opt);
 
-	q6asm_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE);
+	q6asm_add_hdr(ac, &fmt, sizeof(fmt), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	fmt.hdr.opcode = ASM_DATA_CMD_MEDIA_FMT_UPDATE_V2;
@@ -3095,7 +3112,7 @@ fail_cmd:
 int q6asm_media_format_block_wmapro(struct audio_client *ac,
 				void *cfg)
 {
-	struct asm_wmaprov10_fmt_blk_v2 fmt;
+	struct asm_wmaprov10_fmt_blk_v2 fmt __aligned(4);
 	struct asm_wmapro_cfg *wmapro_cfg = (struct asm_wmapro_cfg *)cfg;
 	int rc = 0;
 
@@ -3106,7 +3123,7 @@ int q6asm_media_format_block_wmapro(struct audio_client *ac,
 		wmapro_cfg->ch_mask, wmapro_cfg->encode_opt,
 		wmapro_cfg->adv_encode_opt, wmapro_cfg->adv_encode_opt2);
 
-	q6asm_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE);
+	q6asm_add_hdr(ac, &fmt, sizeof(fmt), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	fmt.hdr.opcode = ASM_DATA_CMD_MEDIA_FMT_UPDATE_V2;
@@ -3144,7 +3161,7 @@ fail_cmd:
 int q6asm_media_format_block_amrwbplus(struct audio_client *ac,
 				struct asm_amrwbplus_cfg *cfg)
 {
-	struct asm_amrwbplus_fmt_blk_v2 fmt;
+	struct asm_amrwbplus_fmt_blk_v2 fmt __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s:session[%d]band-mode[%d]frame-fmt[%d]ch[%d]\n",
@@ -3154,7 +3171,7 @@ int q6asm_media_format_block_amrwbplus(struct audio_client *ac,
 		cfg->amr_frame_fmt,
 		cfg->num_channels);
 
-	q6asm_add_hdr(ac, &fmt.hdr, sizeof(fmt), TRUE);
+	q6asm_add_hdr(ac, &fmt, sizeof(fmt), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	fmt.hdr.opcode = ASM_DATA_CMD_MEDIA_FMT_UPDATE_V2;
@@ -3181,12 +3198,12 @@ fail_cmd:
 int q6asm_ds1_set_endp_params(struct audio_client *ac,
 				int param_id, int param_value)
 {
-	struct asm_dec_ddp_endp_param_v2 ddp_cfg;
+	struct asm_dec_ddp_endp_param_v2 ddp_cfg __aligned(4);
 	int rc = 0;
 
 	pr_debug("%s: session[%d]param_id[%d]param_value[%d]", __func__,
 			ac->session, param_id, param_value);
-	q6asm_add_hdr(ac, &ddp_cfg.hdr, sizeof(ddp_cfg), TRUE);
+	q6asm_add_hdr(ac, &ddp_cfg, sizeof(ddp_cfg), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	ddp_cfg.hdr.opcode = ASM_STREAM_CMD_SET_ENCDEC_PARAM;
 	ddp_cfg.encdec.param_id = param_id;
@@ -3246,7 +3263,7 @@ int q6asm_memory_map(struct audio_client *ac, uint32_t buf_add, int dir,
 	}
 	mmap_regions = (struct avs_cmd_shared_mem_map_regions *)
 							mmap_region_cmd;
-	q6asm_add_mmaphdr(ac, &mmap_regions->hdr, cmd_size,
+	q6asm_add_mmaphdr(ac, mmap_regions, cmd_size,
 			TRUE, ((ac->session << 8) | dir));
 	atomic_set(&ac->mem_state, 1);
 	mmap_regions->hdr.opcode = ASM_CMD_SHARED_MEM_MAP_REGIONS;
@@ -3297,7 +3314,7 @@ fail_cmd:
 
 int q6asm_memory_unmap(struct audio_client *ac, uint32_t buf_add, int dir)
 {
-	struct avs_cmd_shared_mem_unmap_regions mem_unmap;
+	struct avs_cmd_shared_mem_unmap_regions mem_unmap __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct list_head *ptr, *next;
 
@@ -3309,7 +3326,7 @@ int q6asm_memory_unmap(struct audio_client *ac, uint32_t buf_add, int dir)
 	}
 	pr_debug("%s: Session[%d]\n", __func__, ac->session);
 
-	q6asm_add_mmaphdr(ac, &mem_unmap.hdr,
+	q6asm_add_mmaphdr(ac, &mem_unmap,
 			sizeof(struct avs_cmd_shared_mem_unmap_regions),
 			TRUE, ((ac->session << 8) | dir));
 	atomic_set(&ac->mem_state, 1);
@@ -3436,7 +3453,7 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 	}
 	mmap_regions = (struct avs_cmd_shared_mem_map_regions *)
 							mmap_region_cmd;
-	q6asm_add_mmaphdr(ac, &mmap_regions->hdr, cmd_size, TRUE,
+	q6asm_add_mmaphdr(ac, mmap_regions, cmd_size, TRUE,
 					((ac->session << 8) | dir));
 	atomic_set(&ac->mem_state, 1);
 	pr_debug("mmap_region=0x%p token=0x%x\n",
@@ -3503,7 +3520,7 @@ fail_cmd:
 
 static int q6asm_memory_unmap_regions(struct audio_client *ac, int dir)
 {
-	struct avs_cmd_shared_mem_unmap_regions mem_unmap;
+	struct avs_cmd_shared_mem_unmap_regions mem_unmap __aligned(4);
 	struct audio_port_data *port = NULL;
 	struct asm_buffer_node *buf_node = NULL;
 	struct list_head *ptr, *next;
@@ -3518,7 +3535,7 @@ static int q6asm_memory_unmap_regions(struct audio_client *ac, int dir)
 	pr_debug("%s: Session[%d]\n", __func__, ac->session);
 
 	cmd_size = sizeof(struct avs_cmd_shared_mem_unmap_regions);
-	q6asm_add_mmaphdr(ac, &mem_unmap.hdr, cmd_size,
+	q6asm_add_mmaphdr(ac, &mem_unmap, cmd_size,
 			TRUE, ((ac->session << 8) | dir));
 	atomic_set(&ac->mem_state, 1);
 	port = &ac->port[dir];
@@ -3580,7 +3597,7 @@ fail_cmd:
 
 int q6asm_set_lrgain(struct audio_client *ac, int left_gain, int right_gain)
 {
-	struct asm_volume_ctrl_lr_chan_gain lrgain;
+	struct asm_volume_ctrl_lr_chan_gain lrgain __aligned(4);
 	int sz = 0;
 	int rc  = 0;
 
@@ -3591,7 +3608,7 @@ int q6asm_set_lrgain(struct audio_client *ac, int left_gain, int right_gain)
 	}
 
 	sz = sizeof(struct asm_volume_ctrl_lr_chan_gain);
-	q6asm_add_hdr_async(ac, &lrgain.hdr, sz, TRUE);
+	q6asm_add_hdr_async(ac, &lrgain, sz, TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	lrgain.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 	lrgain.param.data_payload_addr_lsw = 0;
@@ -3629,7 +3646,7 @@ fail_cmd:
 
 int q6asm_set_mute(struct audio_client *ac, int muteflag)
 {
-	struct asm_volume_ctrl_mute_config mute;
+	struct asm_volume_ctrl_mute_config mute __aligned(4);
 	int sz = 0;
 	int rc  = 0;
 
@@ -3640,7 +3657,7 @@ int q6asm_set_mute(struct audio_client *ac, int muteflag)
 	}
 
 	sz = sizeof(struct asm_volume_ctrl_mute_config);
-	q6asm_add_hdr_async(ac, &mute.hdr, sz, TRUE);
+	q6asm_add_hdr_async(ac, &mute, sz, TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	mute.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 	mute.param.data_payload_addr_lsw = 0;
@@ -3677,7 +3694,7 @@ fail_cmd:
 
 int q6asm_set_volume(struct audio_client *ac, int volume)
 {
-	struct asm_volume_ctrl_master_gain vol;
+	struct asm_volume_ctrl_master_gain vol __aligned(4);
 	int sz = 0;
 	int rc  = 0;
 
@@ -3688,7 +3705,7 @@ int q6asm_set_volume(struct audio_client *ac, int volume)
 	}
 
 	sz = sizeof(struct asm_volume_ctrl_master_gain);
-	q6asm_add_hdr_async(ac, &vol.hdr, sz, TRUE);
+	q6asm_add_hdr_async(ac, &vol, sz, TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	vol.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 	vol.param.data_payload_addr_lsw = 0;
@@ -3726,7 +3743,7 @@ fail_cmd:
 int q6asm_set_softpause(struct audio_client *ac,
 			struct asm_softpause_params *pause_param)
 {
-	struct asm_soft_pause_params softpause;
+	struct asm_soft_pause_params softpause __aligned(4);
 	int sz = 0;
 	int rc  = 0;
 
@@ -3737,7 +3754,7 @@ int q6asm_set_softpause(struct audio_client *ac,
 	}
 
 	sz = sizeof(struct asm_soft_pause_params);
-	q6asm_add_hdr_async(ac, &softpause.hdr, sz, TRUE);
+	q6asm_add_hdr_async(ac, &softpause, sz, TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	softpause.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 
@@ -3780,7 +3797,7 @@ fail_cmd:
 int q6asm_set_softvolume(struct audio_client *ac,
 			struct asm_softvolume_params *softvol_param)
 {
-	struct asm_soft_step_volume_params softvol;
+	struct asm_soft_step_volume_params softvol __aligned(4);
 	int sz = 0;
 	int rc  = 0;
 
@@ -3791,7 +3808,7 @@ int q6asm_set_softvolume(struct audio_client *ac,
 	}
 
 	sz = sizeof(struct asm_soft_step_volume_params);
-	q6asm_add_hdr_async(ac, &softvol.hdr, sz, TRUE);
+	q6asm_add_hdr_async(ac, &softvol, sz, TRUE);
 	atomic_set(&ac->cmd_state, 1);
 	softvol.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 	softvol.param.data_payload_addr_lsw = 0;
@@ -3831,7 +3848,7 @@ fail_cmd:
 
 int q6asm_equalizer(struct audio_client *ac, void *eq_p)
 {
-	struct asm_eq_params eq;
+	struct asm_eq_params eq __aligned(4);
 	struct msm_audio_eq_stream_config *eq_params = NULL;
 	int i  = 0;
 	int sz = 0;
@@ -3850,7 +3867,7 @@ int q6asm_equalizer(struct audio_client *ac, void *eq_p)
 	}
 	sz = sizeof(struct asm_eq_params);
 	eq_params = (struct msm_audio_eq_stream_config *) eq_p;
-	q6asm_add_hdr(ac, &eq.hdr, sz, TRUE);
+	q6asm_add_hdr(ac, &eq, sz, TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	eq.hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
@@ -3910,7 +3927,7 @@ fail_cmd:
 
 int q6asm_read(struct audio_client *ac)
 {
-	struct asm_data_cmd_read_v2 read;
+	struct asm_data_cmd_read_v2 read __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct list_head *ptr, *next;
 	struct audio_buffer        *ab;
@@ -3924,7 +3941,7 @@ int q6asm_read(struct audio_client *ac)
 	if (ac->io_mode & SYNC_IO_MODE) {
 		port = &ac->port[OUT];
 
-		q6asm_add_hdr(ac, &read.hdr, sizeof(read), FALSE);
+		q6asm_add_hdr(ac, &read, sizeof(read), FALSE);
 
 		mutex_lock(&port->lock);
 
@@ -3978,7 +3995,7 @@ fail_cmd:
 
 int q6asm_read_nolock(struct audio_client *ac)
 {
-	struct asm_data_cmd_read_v2 read;
+	struct asm_data_cmd_read_v2 read __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct list_head *ptr, *next;
 	struct audio_buffer        *ab;
@@ -3992,7 +4009,7 @@ int q6asm_read_nolock(struct audio_client *ac)
 	if (ac->io_mode & SYNC_IO_MODE) {
 		port = &ac->port[OUT];
 
-		q6asm_add_hdr_async(ac, &read.hdr, sizeof(read), FALSE);
+		q6asm_add_hdr_async(ac, &read, sizeof(read), FALSE);
 
 
 		dsp_buf = port->dsp_buf;
@@ -4042,7 +4059,7 @@ int q6asm_async_write(struct audio_client *ac,
 					  struct audio_aio_write_param *param)
 {
 	int rc = 0;
-	struct asm_data_cmd_write_v2 write;
+	struct asm_data_cmd_write_v2 write __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct list_head *ptr, *next;
 	struct audio_buffer        *ab;
@@ -4058,7 +4075,7 @@ int q6asm_async_write(struct audio_client *ac,
 	}
 
 	q6asm_stream_add_hdr_async(
-			ac, &write.hdr, sizeof(write), FALSE, ac->stream_id);
+			ac, &write, sizeof(write), FALSE, ac->stream_id);
 	port = &ac->port[IN];
 	ab = &port->buf[port->dsp_buf];
 
@@ -4119,7 +4136,7 @@ int q6asm_async_read(struct audio_client *ac,
 					  struct audio_aio_read_param *param)
 {
 	int rc = 0;
-	struct asm_data_cmd_read_v2 read;
+	struct asm_data_cmd_read_v2 read __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct list_head *ptr, *next;
 	u32 lbuf_addr_lsw;
@@ -4132,7 +4149,7 @@ int q6asm_async_read(struct audio_client *ac,
 		return -EINVAL;
 	}
 
-	q6asm_add_hdr_async(ac, &read.hdr, sizeof(read), FALSE);
+	q6asm_add_hdr_async(ac, &read, sizeof(read), FALSE);
 
 	/* Pass physical address as token for AIO scheme */
 	read.hdr.token = param->paddr;
@@ -4179,7 +4196,7 @@ int q6asm_write(struct audio_client *ac, uint32_t len, uint32_t msw_ts,
 		uint32_t lsw_ts, uint32_t flags)
 {
 	int rc = 0;
-	struct asm_data_cmd_write_v2 write;
+	struct asm_data_cmd_write_v2 write __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct audio_port_data *port;
 	struct audio_buffer    *ab;
@@ -4193,7 +4210,7 @@ int q6asm_write(struct audio_client *ac, uint32_t len, uint32_t msw_ts,
 	if (ac->io_mode & SYNC_IO_MODE) {
 		port = &ac->port[IN];
 
-		q6asm_add_hdr(ac, &write.hdr, sizeof(write),
+		q6asm_add_hdr(ac, &write, sizeof(write),
 				FALSE);
 		mutex_lock(&port->lock);
 
@@ -4247,7 +4264,7 @@ int q6asm_write_nolock(struct audio_client *ac, uint32_t len, uint32_t msw_ts,
 			uint32_t lsw_ts, uint32_t flags)
 {
 	int rc = 0;
-	struct asm_data_cmd_write_v2 write;
+	struct asm_data_cmd_write_v2 write __aligned(4);
 	struct asm_buffer_node *buf_node = NULL;
 	struct audio_port_data *port;
 	struct audio_buffer    *ab;
@@ -4261,7 +4278,7 @@ int q6asm_write_nolock(struct audio_client *ac, uint32_t len, uint32_t msw_ts,
 	if (ac->io_mode & SYNC_IO_MODE) {
 		port = &ac->port[IN];
 
-		q6asm_add_hdr_async(ac, &write.hdr, sizeof(write),
+		q6asm_add_hdr_async(ac, &write, sizeof(write),
 					FALSE);
 
 		dsp_buf = port->dsp_buf;
@@ -4582,7 +4599,7 @@ int q6asm_stream_cmd_nowait(struct audio_client *ac, int cmd,
 int __q6asm_send_meta_data(struct audio_client *ac, uint32_t stream_id,
 			  uint32_t initial_samples, uint32_t trailing_samples)
 {
-	struct asm_data_cmd_remove_silence silence;
+	struct asm_data_cmd_remove_silence silence __aligned(4);
 	int rc = 0;
 
 	if (!ac || ac->apr == NULL) {
@@ -4590,7 +4607,7 @@ int __q6asm_send_meta_data(struct audio_client *ac, uint32_t stream_id,
 		return -EINVAL;
 	}
 	pr_debug("%s session[%d]", __func__, ac->session);
-	q6asm_stream_add_hdr_async(ac, &silence.hdr, sizeof(silence), FALSE,
+	q6asm_stream_add_hdr_async(ac, &silence, sizeof(silence), FALSE,
 				  stream_id);
 
 	/*
@@ -4652,7 +4669,7 @@ int q6asm_stream_sample_rate_to_geq(struct audio_client *ac, uint32_t stream_id,
 		pr_err("%s, q6_cmd memory alloc failed", __func__);
 		return -ENOMEM;
 	}
-	q6asm_stream_add_hdr(ac, &pasm->hdr, sz, TRUE, stream_id);
+	q6asm_stream_add_hdr(ac, pasm, sz, TRUE, stream_id);
 
 	pasm->hdr.opcode = ASM_STREAM_CMD_SET_PP_PARAMS_V2;
 	pasm->param.data_payload_addr_lsw = 0;
@@ -4716,7 +4733,7 @@ static void q6asm_reset_buf_state(struct audio_client *ac)
 
 int q6asm_reg_tx_overflow(struct audio_client *ac, uint16_t enable)
 {
-	struct asm_session_cmd_regx_overflow tx_overflow;
+	struct asm_session_cmd_regx_overflow tx_overflow __aligned(4);
 	int rc;
 
 	if (!ac || ac->apr == NULL) {
@@ -4725,7 +4742,7 @@ int q6asm_reg_tx_overflow(struct audio_client *ac, uint16_t enable)
 	}
 	pr_debug("%s:session[%d]enable[%d]\n", __func__,
 						ac->session, enable);
-	q6asm_add_hdr(ac, &tx_overflow.hdr, sizeof(tx_overflow), TRUE);
+	q6asm_add_hdr(ac, &tx_overflow, sizeof(tx_overflow), TRUE);
 	atomic_set(&ac->cmd_state, 1);
 
 	tx_overflow.hdr.opcode = \
@@ -4752,7 +4769,7 @@ fail_cmd:
 
 int q6asm_reg_rx_underflow(struct audio_client *ac, uint16_t enable)
 {
-	struct asm_session_cmd_rgstr_rx_underflow rx_underflow;
+	struct asm_session_cmd_rgstr_rx_underflow rx_underflow __aligned(4);
 	int rc;
 
 	if (!ac || ac->apr == NULL) {
@@ -4761,7 +4778,7 @@ int q6asm_reg_rx_underflow(struct audio_client *ac, uint16_t enable)
 	}
 	pr_debug("%s:session[%d]enable[%d]\n", __func__,
 						ac->session, enable);
-	q6asm_add_hdr_async(ac, &rx_underflow.hdr, sizeof(rx_underflow), FALSE);
+	q6asm_add_hdr_async(ac, &rx_underflow, sizeof(rx_underflow), FALSE);
 
 	rx_underflow.hdr.opcode = \
 			ASM_SESSION_CMD_REGISTER_FOR_RX_UNDERFLOW_EVENTS;

@@ -1568,6 +1568,7 @@ void __init synaptics_module_init(void)
 static int __synaptics_init(struct psmouse *psmouse, bool absolute_mode)
 {
 	struct synaptics_data *priv;
+	const char *system_name;
 	int err = -1;
 
 	/*
@@ -1648,9 +1649,10 @@ static int __synaptics_init(struct psmouse *psmouse, bool absolute_mode)
 	 * the same rate as a standard PS/2 mouse).
 	 */
 	if (psmouse->rate >= 80 && impaired_toshiba_kbc) {
+		system_name = dmi_get_system_info(DMI_PRODUCT_NAME);
 		psmouse_info(psmouse,
 			     "Toshiba %s detected, limiting rate to 40pps.\n",
-			     dmi_get_system_info(DMI_PRODUCT_NAME));
+			     system_name ? system_name : "system");
 		psmouse->rate = 40;
 	}
 

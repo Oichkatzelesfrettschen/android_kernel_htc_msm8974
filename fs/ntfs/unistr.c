@@ -20,6 +20,7 @@
  */
 
 #include <linux/slab.h>
+#include <asm/unaligned.h>
 
 #include "types.h"
 #include "debug.h"
@@ -31,6 +32,8 @@
  *
  * All these routines assume that the Unicode characters are in little endian
  * encoding inside the strings!!!
+ * File names can reside in packed on-disk records, so character accesses must
+ * also support unaligned addresses.
  */
 
 /*
@@ -101,13 +104,15 @@ int ntfs_collate_names(const ntfschar *name1, const u32 name1_len,
 {
 	u32 cnt, min_len;
 	u16 c1, c2;
+	const u8 *name1_bytes = (const u8 *)name1;
+	const u8 *name2_bytes = (const u8 *)name2;
 
 	min_len = name1_len;
 	if (name1_len > name2_len)
 		min_len = name2_len;
 	for (cnt = 0; cnt < min_len; ++cnt) {
-		c1 = le16_to_cpu(*name1++);
-		c2 = le16_to_cpu(*name2++);
+		c1 = get_unaligned_le16(name1_bytes + cnt * sizeof(ntfschar));
+		c2 = get_unaligned_le16(name2_bytes + cnt * sizeof(ntfschar));
 		if (ic) {
 			if (c1 < upcase_len)
 				c1 = le16_to_cpu(upcase[c1]);
@@ -126,7 +131,7 @@ int ntfs_collate_names(const ntfschar *name1, const u32 name1_len,
 	if (name1_len == name2_len)
 		return 0;
 	/* name1_len > name2_len */
-	c1 = le16_to_cpu(*name1);
+	c1 = get_unaligned_le16(name1_bytes + cnt * sizeof(ntfschar));
 	if (c1 < 64 && legal_ansi_char_array[c1] & 8)
 		return err_val;
 	return 1;
@@ -152,8 +157,8 @@ int ntfs_ucsncmp(const ntfschar *s1, const ntfschar *s2, size_t n)
 	size_t i;
 
 	for (i = 0; i < n; ++i) {
-		c1 = le16_to_cpu(s1[i]);
-		c2 = le16_to_cpu(s2[i]);
+		c1 = get_unaligned_le16((const u8 *)s1 + i * sizeof(ntfschar));
+		c2 = get_unaligned_le16((const u8 *)s2 + i * sizeof(ntfschar));
 		if (c1 < c2)
 			return -1;
 		if (c1 > c2)
@@ -189,9 +194,11 @@ int ntfs_ucsncasecmp(const ntfschar *s1, const ntfschar *s2, size_t n,
 	u16 c1, c2;
 
 	for (i = 0; i < n; ++i) {
-		if ((c1 = le16_to_cpu(s1[i])) < upcase_size)
+		if ((c1 = get_unaligned_le16((const u8 *)s1 +
+				i * sizeof(ntfschar))) < upcase_size)
 			c1 = le16_to_cpu(upcase[c1]);
-		if ((c2 = le16_to_cpu(s2[i])) < upcase_size)
+		if ((c2 = get_unaligned_le16((const u8 *)s2 +
+				i * sizeof(ntfschar))) < upcase_size)
 			c2 = le16_to_cpu(upcase[c2]);
 		if (c1 < c2)
 			return -1;
@@ -210,14 +217,17 @@ void ntfs_upcase_name(ntfschar *name, u32 name_len, const ntfschar *upcase,
 	u16 u;
 
 	for (i = 0; i < name_len; i++)
-		if ((u = le16_to_cpu(name[i])) < upcase_len)
-			name[i] = upcase[u];
+		if ((u = get_unaligned_le16((u8 *)name +
+				i * sizeof(ntfschar))) < upcase_len)
+			put_unaligned_le16(le16_to_cpu(upcase[u]),
+					(u8 *)name + i * sizeof(ntfschar));
 }
 
 void ntfs_file_upcase_value(FILE_NAME_ATTR *file_name_attr,
 		const ntfschar *upcase, const u32 upcase_len)
 {
-	ntfs_upcase_name((ntfschar*)&file_name_attr->file_name,
+	ntfs_upcase_name((ntfschar *)((u8 *)file_name_attr +
+			offsetof(FILE_NAME_ATTR, file_name)),
 			file_name_attr->file_name_length, upcase, upcase_len);
 }
 
@@ -226,9 +236,11 @@ int ntfs_file_compare_values(FILE_NAME_ATTR *file_name_attr1,
 		const int err_val, const IGNORE_CASE_BOOL ic,
 		const ntfschar *upcase, const u32 upcase_len)
 {
-	return ntfs_collate_names((ntfschar*)&file_name_attr1->file_name,
+	return ntfs_collate_names((ntfschar *)((u8 *)file_name_attr1 +
+			offsetof(FILE_NAME_ATTR, file_name)),
 			file_name_attr1->file_name_length,
-			(ntfschar*)&file_name_attr2->file_name,
+			(ntfschar *)((u8 *)file_name_attr2 +
+				offsetof(FILE_NAME_ATTR, file_name)),
 			file_name_attr2->file_name_length,
 			err_val, ic, upcase, upcase_len);
 }
@@ -355,7 +367,8 @@ int ntfs_ucstonls(const ntfs_volume *vol, const ntfschar *ins,
 				goto mem_err_out;
 		}
 		for (i = o = 0; i < ins_len; i++) {
-retry:			wc = nls->uni2char(le16_to_cpu(ins[i]), ns + o,
+retry:			wc = nls->uni2char(get_unaligned_le16((const u8 *)ins +
+					i * sizeof(ntfschar)), ns + o,
 					ns_len - o);
 			if (wc > 0) {
 				o += wc;

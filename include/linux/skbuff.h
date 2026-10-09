@@ -125,6 +125,12 @@ struct nf_bridge_info {
 };
 #endif
 
+/* Queue heads and socket buffers share only these two link fields. */
+struct sk_buff_list {
+	struct sk_buff	*next;
+	struct sk_buff	*prev;
+};
+
 struct sk_buff_head {
 	/* These two members must be first. */
 	struct sk_buff	*next;
@@ -135,6 +141,11 @@ struct sk_buff_head {
 };
 
 struct sk_buff;
+
+static inline struct sk_buff_list *skb_list_ptr(struct sk_buff *skb)
+{
+	return (struct sk_buff_list *)skb;
+}
 
 /* To allow 64K frame to be packed as single skb without frag_list we
  * require 64K/PAGE_SIZE pages plus 1 additional page to allow for
@@ -926,7 +937,7 @@ static inline struct sk_buff *skb_unshare(struct sk_buff *skb,
  */
 static inline struct sk_buff *skb_peek(const struct sk_buff_head *list_)
 {
-	struct sk_buff *list = ((const struct sk_buff *)list_)->next;
+	struct sk_buff *list = list_->next;
 	if (list == (struct sk_buff *)list_)
 		list = NULL;
 	return list;
@@ -965,7 +976,7 @@ static inline struct sk_buff *skb_peek_next(struct sk_buff *skb,
  */
 static inline struct sk_buff *skb_peek_tail(const struct sk_buff_head *list_)
 {
-	struct sk_buff *list = ((const struct sk_buff *)list_)->prev;
+	struct sk_buff *list = list_->prev;
 	if (list == (struct sk_buff *)list_)
 		list = NULL;
 	return list;
@@ -1032,7 +1043,7 @@ static inline void __skb_insert(struct sk_buff *newsk,
 {
 	newsk->next = next;
 	newsk->prev = prev;
-	next->prev  = prev->next = newsk;
+	skb_list_ptr(next)->prev = skb_list_ptr(prev)->next = newsk;
 	list->qlen++;
 }
 
@@ -1044,10 +1055,10 @@ static inline void __skb_queue_splice(const struct sk_buff_head *list,
 	struct sk_buff *last = list->prev;
 
 	first->prev = prev;
-	prev->next = first;
+	skb_list_ptr(prev)->next = first;
 
 	last->next = next;
-	next->prev = last;
+	skb_list_ptr(next)->prev = last;
 }
 
 /**
@@ -1128,7 +1139,7 @@ static inline void __skb_queue_after(struct sk_buff_head *list,
 				     struct sk_buff *prev,
 				     struct sk_buff *newsk)
 {
-	__skb_insert(newsk, prev, prev->next, list);
+	__skb_insert(newsk, prev, skb_list_ptr(prev)->next, list);
 }
 
 extern void skb_append(struct sk_buff *old, struct sk_buff *newsk,
@@ -1138,7 +1149,7 @@ static inline void __skb_queue_before(struct sk_buff_head *list,
 				      struct sk_buff *next,
 				      struct sk_buff *newsk)
 {
-	__skb_insert(newsk, next->prev, next, list);
+	__skb_insert(newsk, skb_list_ptr(next)->prev, next, list);
 }
 
 /**
@@ -1188,8 +1199,8 @@ static inline void __skb_unlink(struct sk_buff *skb, struct sk_buff_head *list)
 	next	   = skb->next;
 	prev	   = skb->prev;
 	skb->next  = skb->prev = NULL;
-	next->prev = prev;
-	prev->next = next;
+	skb_list_ptr(next)->prev = prev;
+	skb_list_ptr(prev)->next = next;
 }
 
 /**
@@ -2177,18 +2188,18 @@ static inline int pskb_trim_rcsum(struct sk_buff *skb, unsigned int len)
 		     skb = skb->next)
 
 #define skb_queue_walk_safe(queue, skb, tmp)					\
-		for (skb = (queue)->next, tmp = skb->next;			\
+		for (skb = (queue)->next, tmp = skb_list_ptr(skb)->next;\
 		     skb != (struct sk_buff *)(queue);				\
-		     skb = tmp, tmp = skb->next)
+		     skb = tmp, tmp = skb_list_ptr(skb)->next)
 
 #define skb_queue_walk_from(queue, skb)						\
 		for (; skb != (struct sk_buff *)(queue);			\
 		     skb = skb->next)
 
 #define skb_queue_walk_from_safe(queue, skb, tmp)				\
-		for (tmp = skb->next;						\
+		for (tmp = skb_list_ptr(skb)->next;				\
 		     skb != (struct sk_buff *)(queue);				\
-		     skb = tmp, tmp = skb->next)
+		     skb = tmp, tmp = skb_list_ptr(skb)->next)
 
 #define skb_queue_reverse_walk(queue, skb) \
 		for (skb = (queue)->prev;					\
@@ -2196,14 +2207,14 @@ static inline int pskb_trim_rcsum(struct sk_buff *skb, unsigned int len)
 		     skb = skb->prev)
 
 #define skb_queue_reverse_walk_safe(queue, skb, tmp)				\
-		for (skb = (queue)->prev, tmp = skb->prev;			\
+		for (skb = (queue)->prev, tmp = skb_list_ptr(skb)->prev;\
 		     skb != (struct sk_buff *)(queue);				\
-		     skb = tmp, tmp = skb->prev)
+		     skb = tmp, tmp = skb_list_ptr(skb)->prev)
 
 #define skb_queue_reverse_walk_from_safe(queue, skb, tmp)			\
-		for (tmp = skb->prev;						\
+		for (tmp = skb_list_ptr(skb)->prev;				\
 		     skb != (struct sk_buff *)(queue);				\
-		     skb = tmp, tmp = skb->prev)
+		     skb = tmp, tmp = skb_list_ptr(skb)->prev)
 
 
 static inline int __skb_trim_rcsum(struct sk_buff *skb, unsigned int len)
