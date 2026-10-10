@@ -4905,8 +4905,166 @@ static struct platform_driver qseecom_plat_driver = {
 	},
 };
 
+/*
+ * QSEE reads every SCM request and response by byte offset as a sequence of
+ * 32-bit words, with any byte arrays after the last word, and scm_call()
+ * copies each buffer whole. On this 32-bit ARM kernel every scalar, pointer,
+ * unsigned long and enum field is one word, so field k sits at byte 4 * k
+ * and the size is the word count times 4 plus the arrays. The checks fail
+ * the compile when a packing attribute, a field change or a compiler moves
+ * that layout, and they generate no code. They use BUILD_BUG_ON_ZERO's
+ * negative-width bitfield, which the front end rejects: with optimization
+ * BUILD_BUG_ON becomes a call to an error-attributed function, which a
+ * ThinLTO object only reaches at the final link.
+ */
+#define QSEE_CHECK(cond) ((void)BUILD_BUG_ON_ZERO(!(cond)))
+#define QSEE_WORD(type, field, k) \
+	QSEE_CHECK(offsetof(struct type, field) == (k) * 4)
+#define QSEE_SIZE(type, words, tail) \
+	QSEE_CHECK(sizeof(struct type) == (words) * 4 + (tail))
+
+static inline void qseecom_check_scm_layout(void)
+{
+	QSEE_WORD(qsee_apps_region_info_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qsee_apps_region_info_ireq, addr, 1);
+	QSEE_WORD(qsee_apps_region_info_ireq, size, 2);
+	QSEE_SIZE(qsee_apps_region_info_ireq, 3, 0);
+
+	QSEE_WORD(qseecom_check_app_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_check_app_ireq, app_name, 1);
+	QSEE_SIZE(qseecom_check_app_ireq, 1, MAX_APP_NAME_SIZE);
+
+	QSEE_WORD(qseecom_load_app_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_load_app_ireq, mdt_len, 1);
+	QSEE_WORD(qseecom_load_app_ireq, img_len, 2);
+	QSEE_WORD(qseecom_load_app_ireq, phy_addr, 3);
+	QSEE_WORD(qseecom_load_app_ireq, app_name, 4);
+	QSEE_SIZE(qseecom_load_app_ireq, 4, MAX_APP_NAME_SIZE);
+
+	QSEE_WORD(qseecom_unload_app_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_unload_app_ireq, app_id, 1);
+	QSEE_SIZE(qseecom_unload_app_ireq, 2, 0);
+
+	QSEE_WORD(qseecom_load_lib_image_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_load_lib_image_ireq, mdt_len, 1);
+	QSEE_WORD(qseecom_load_lib_image_ireq, img_len, 2);
+	QSEE_WORD(qseecom_load_lib_image_ireq, phy_addr, 3);
+	QSEE_SIZE(qseecom_load_lib_image_ireq, 4, 0);
+
+	QSEE_WORD(qseecom_unload_lib_image_ireq, qsee_cmd_id, 0);
+	QSEE_SIZE(qseecom_unload_lib_image_ireq, 1, 0);
+
+	QSEE_WORD(qseecom_register_listener_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_register_listener_ireq, listener_id, 1);
+	QSEE_WORD(qseecom_register_listener_ireq, sb_ptr, 2);
+	QSEE_WORD(qseecom_register_listener_ireq, sb_len, 3);
+	QSEE_SIZE(qseecom_register_listener_ireq, 4, 0);
+
+	QSEE_WORD(qseecom_unregister_listener_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_unregister_listener_ireq, listener_id, 1);
+	QSEE_SIZE(qseecom_unregister_listener_ireq, 2, 0);
+
+	QSEE_WORD(qseecom_client_send_data_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_client_send_data_ireq, app_id, 1);
+	QSEE_WORD(qseecom_client_send_data_ireq, req_ptr, 2);
+	QSEE_WORD(qseecom_client_send_data_ireq, req_len, 3);
+	QSEE_WORD(qseecom_client_send_data_ireq, rsp_ptr, 4);
+	QSEE_WORD(qseecom_client_send_data_ireq, rsp_len, 5);
+	QSEE_SIZE(qseecom_client_send_data_ireq, 6, 0);
+
+	QSEE_WORD(qseecom_reg_log_buf_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_reg_log_buf_ireq, phy_addr, 1);
+	QSEE_WORD(qseecom_reg_log_buf_ireq, len, 2);
+	QSEE_SIZE(qseecom_reg_log_buf_ireq, 3, 0);
+
+	QSEE_WORD(qseecom_client_listener_data_irsp, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_client_listener_data_irsp, listener_id, 1);
+	QSEE_WORD(qseecom_client_listener_data_irsp, status, 2);
+	QSEE_SIZE(qseecom_client_listener_data_irsp, 3, 0);
+
+	QSEE_WORD(qseecom_command_scm_resp, result, 0);
+	QSEE_WORD(qseecom_command_scm_resp, resp_type, 1);
+	QSEE_WORD(qseecom_command_scm_resp, data, 2);
+	QSEE_SIZE(qseecom_command_scm_resp, 3, 0);
+
+	QSEE_WORD(qseecom_rpmb_provision_key, key_type, 0);
+	QSEE_SIZE(qseecom_rpmb_provision_key, 1, 0);
+
+	QSEE_WORD(qseecom_client_send_service_ireq, qsee_cmd_id, 0);
+	QSEE_WORD(qseecom_client_send_service_ireq, key_type, 1);
+	QSEE_WORD(qseecom_client_send_service_ireq, req_len, 2);
+	QSEE_WORD(qseecom_client_send_service_ireq, rsp_ptr, 3);
+	QSEE_WORD(qseecom_client_send_service_ireq, rsp_len, 4);
+	QSEE_SIZE(qseecom_client_send_service_ireq, 5, 0);
+
+	QSEE_WORD(qseecom_key_generate_ireq, qsee_command_id, 0);
+	QSEE_WORD(qseecom_key_generate_ireq, flags, 1);
+	QSEE_WORD(qseecom_key_generate_ireq, key_id, 2);
+	QSEE_CHECK(offsetof(struct qseecom_key_generate_ireq, hash32) ==
+		     2 * 4 + QSEECOM_KEY_ID_SIZE);
+	QSEE_SIZE(qseecom_key_generate_ireq, 2,
+		  QSEECOM_KEY_ID_SIZE + QSEECOM_HASH_SIZE);
+
+	QSEE_WORD(qseecom_key_select_ireq, qsee_command_id, 0);
+	QSEE_WORD(qseecom_key_select_ireq, ce, 1);
+	QSEE_WORD(qseecom_key_select_ireq, pipe, 2);
+	QSEE_WORD(qseecom_key_select_ireq, pipe_type, 3);
+	QSEE_WORD(qseecom_key_select_ireq, flags, 4);
+	QSEE_WORD(qseecom_key_select_ireq, key_id, 5);
+	QSEE_CHECK(offsetof(struct qseecom_key_select_ireq, hash32) ==
+		     5 * 4 + QSEECOM_KEY_ID_SIZE);
+	QSEE_SIZE(qseecom_key_select_ireq, 5,
+		  QSEECOM_KEY_ID_SIZE + QSEECOM_HASH_SIZE);
+
+	QSEE_WORD(qseecom_key_delete_ireq, qsee_command_id, 0);
+	QSEE_WORD(qseecom_key_delete_ireq, flags, 1);
+	QSEE_WORD(qseecom_key_delete_ireq, key_id, 2);
+	QSEE_CHECK(offsetof(struct qseecom_key_delete_ireq, hash32) ==
+		     2 * 4 + QSEECOM_KEY_ID_SIZE);
+	QSEE_SIZE(qseecom_key_delete_ireq, 2,
+		  QSEECOM_KEY_ID_SIZE + QSEECOM_HASH_SIZE);
+
+	QSEE_WORD(qseecom_key_userinfo_update_ireq, qsee_command_id, 0);
+	QSEE_WORD(qseecom_key_userinfo_update_ireq, flags, 1);
+	QSEE_WORD(qseecom_key_userinfo_update_ireq, key_id, 2);
+	QSEE_CHECK(offsetof(struct qseecom_key_userinfo_update_ireq,
+			      current_hash32) == 2 * 4 + QSEECOM_KEY_ID_SIZE);
+	QSEE_CHECK(offsetof(struct qseecom_key_userinfo_update_ireq,
+			      new_hash32) ==
+		     2 * 4 + QSEECOM_KEY_ID_SIZE + QSEECOM_HASH_SIZE);
+	QSEE_SIZE(qseecom_key_userinfo_update_ireq, 2,
+		  QSEECOM_KEY_ID_SIZE + 2 * QSEECOM_HASH_SIZE);
+
+	QSEE_WORD(qseecom_key_max_count_query_ireq, flags, 0);
+	QSEE_SIZE(qseecom_key_max_count_query_ireq, 1, 0);
+
+	QSEE_WORD(qseecom_key_max_count_query_irsp, max_key_count, 0);
+	QSEE_SIZE(qseecom_key_max_count_query_irsp, 1, 0);
+
+	QSEE_WORD(qse_pr_init_sb_req_s, pr_cmd, 0);
+	QSEE_WORD(qse_pr_init_sb_req_s, sb_ptr, 1);
+	QSEE_WORD(qse_pr_init_sb_req_s, sb_len, 2);
+	QSEE_WORD(qse_pr_init_sb_req_s, listener_id, 3);
+	QSEE_SIZE(qse_pr_init_sb_req_s, 4, 0);
+
+	QSEE_WORD(qse_pr_init_sb_rsp_s, pr_cmd, 0);
+	QSEE_WORD(qse_pr_init_sb_rsp_s, ret, 1);
+	QSEE_SIZE(qse_pr_init_sb_rsp_s, 2, 0);
+
+	QSEE_WORD(qseecom_command, cmd_type, 0);
+	QSEE_WORD(qseecom_command, sb_in_cmd_addr, 1);
+	QSEE_WORD(qseecom_command, sb_in_cmd_len, 2);
+	QSEE_SIZE(qseecom_command, 3, 0);
+
+	QSEE_WORD(qseecom_response, cmd_status, 0);
+	QSEE_WORD(qseecom_response, sb_in_rsp_addr, 1);
+	QSEE_WORD(qseecom_response, sb_in_rsp_len, 2);
+	QSEE_SIZE(qseecom_response, 3, 0);
+}
+
 static int __devinit qseecom_init(void)
 {
+	qseecom_check_scm_layout();
 	return platform_driver_register(&qseecom_plat_driver);
 }
 
