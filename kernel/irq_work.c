@@ -146,7 +146,10 @@ static int irq_work_cpu_notify(struct notifier_block *self,
 	if ((action & ~CPU_TASKS_FROZEN) == CPU_DYING) {
 		if (WARN_ON_ONCE((long)hcpu != smp_processor_id()))
 			return NOTIFY_DONE;
-		__irq_work_run();
+		/* CPU death removes the tick needed by callback requeues. */
+		do {
+			__irq_work_run();
+		} while (!llist_empty(&__get_cpu_var(irq_work_list)));
 	}
 	return NOTIFY_OK;
 }
