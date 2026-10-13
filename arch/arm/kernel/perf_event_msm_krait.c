@@ -539,7 +539,9 @@ static int msm_test_set_ev_constraint(struct perf_event *event)
 	if (!prefix)
 		return 0;
 
-	bitmap_t = 1 << (((prefix - 1) * 32) + (reg * 4) + group);
+	if (((prefix - 1) * 32) + (reg * 4) + group >= 64)
+		return -EINVAL;
+	bitmap_t = 1ULL << (((prefix - 1) * 32) + (reg * 4) + group);
 
 	/* Set it if not already set. */
 	if (!(cpu_pmu_bitmap & bitmap_t)) {
@@ -564,7 +566,9 @@ static int msm_clear_ev_constraint(struct perf_event *event)
 	if (!prefix)
 		return 0;
 
-	bitmap_t = 1 << (((prefix - 1) * 32) + (reg * 4) + group);
+	if (((prefix - 1) * 32) + (reg * 4) + group >= 64)
+		return -EINVAL;
+	bitmap_t = 1ULL << (((prefix - 1) * 32) + (reg * 4) + group);
 
 	/* Clear constraint bit. */
 	cpu_pmu_bitmap &= ~(bitmap_t);

@@ -656,7 +656,7 @@ static void perf_pmu_rotate_start(struct pmu *pmu)
 
 	WARN_ON(!irqs_disabled());
 
-	if (list_empty(&cpuctx->rotation_list))
+	if (!cpuctx->quiesced && list_empty(&cpuctx->rotation_list))
 		list_add(&cpuctx->rotation_list, head);
 }
 
@@ -1122,7 +1122,7 @@ list_del_event(struct perf_event *event, struct perf_event_context *ctx)
 
 	if (is_cgroup_event(event)) {
 		ctx->nr_cgroups--;
-		cpuctx = __get_cpu_context(ctx);
+		cpuctx = per_cpu_ptr(ctx->pmu->pmu_cpu_context, event->cpu);
 		/*
 		 * if there are no more cgroup events
 		 * then cler cgrp to avoid stale pointer
@@ -1310,41 +1310,6 @@ static int __perf_remove_from_context(void *info)
 	return 0;
 }
 
-#ifdef CONFIG_SMP
-/*
- * A per-CPU event of a PMU with events_across_hotplug stays in its CPU's
- * context while that CPU is offline, and only that CPU may run the PMU's del
- * callback for it. Bring the CPU up and remove the event there. The hotplug
- * read lock holds the CPU online from the online check in
- * smp_call_function_single() to the end of the removal; a cpu_down() that
- * lands between cpu_up() and that lock makes the call return -ENXIO, and the
- * loop brings the CPU up again. cpu_up() returns -EINVAL for a CPU that is
- * already online, which the event's CPU was when the event was opened.
- */
-static void __ref perf_retry_remove(struct remove_event *rep)
-{
-	int cpu = rep->event->cpu;
-	int up_ret, ret;
-
-	do {
-		up_ret = cpu_up(cpu);
-		if (up_ret && (up_ret != -EINVAL || !cpu_present(cpu))) {
-			pr_err("Failed to bring up CPU: %d, ret: %d\n",
-			       cpu, up_ret);
-			return;
-		}
-
-		get_online_cpus();
-		ret = cpu_function_call(cpu, __perf_remove_from_context, rep);
-		put_online_cpus();
-	} while (ret == -ENXIO);
-}
-#else
-static void perf_retry_remove(struct remove_event *rep)
-{
-}
-#endif
-
 /*
  * Remove the event from a task's (or a CPU's) list of events.
  *
@@ -1375,8 +1340,16 @@ static void __ref perf_remove_from_context(struct perf_event *event, bool detach
 		 * Per cpu events are removed via an smp call
 		 */
 		ret = cpu_function_call(event->cpu, __perf_remove_from_context, &re);
-		if (ret == -ENXIO)
-			perf_retry_remove(&re);
+		if (!ret)
+			return;
+
+		/* Hotplug exclusion makes CPU_DYING teardown visible here. */
+		raw_spin_lock_irq(&ctx->lock);
+		WARN_ON_ONCE(event->state == PERF_EVENT_STATE_ACTIVE);
+		if (detach_group)
+			perf_group_detach(event);
+		list_del_event(event, ctx);
+		raw_spin_unlock_irq(&ctx->lock);
 		return;
 	}
 
@@ -1430,8 +1403,10 @@ int __perf_event_disable(void *info)
 	 * If it is in error state, leave it in error state.
 	 */
 	if (event->state >= PERF_EVENT_STATE_INACTIVE) {
-		update_context_time(ctx);
-		update_cgrp_time_from_event(event);
+		if (ctx->is_active) {
+			update_context_time(ctx);
+			update_cgrp_time_from_event(event);
+		}
 		update_group_times(event);
 		if (event == event->group_leader)
 			group_sched_out(event, cpuctx, ctx);
@@ -1463,17 +1438,13 @@ static void _perf_event_disable(struct perf_event *event)
 	struct perf_event_context *ctx = event->ctx;
 	struct task_struct *task = ctx->task;
 
-	if (!task) {
-		/*
-		 * Disable the event on the cpu that it's on
-		 */
-		cpu_function_call(event->cpu, __perf_event_disable, event);
+retry:
+	if (task) {
+		if (!task_function_call(task, __perf_event_disable, event))
+			return;
+	} else if (!cpu_function_call(event->cpu, __perf_event_disable, event)) {
 		return;
 	}
-
-retry:
-	if (!task_function_call(task, __perf_event_disable, event))
-		return;
 
 	raw_spin_lock_irq(&ctx->lock);
 	/*
@@ -1968,14 +1939,6 @@ static void _perf_event_enable(struct perf_event *event)
 	struct perf_event_context *ctx = event->ctx;
 	struct task_struct *task = ctx->task;
 
-	if (!task) {
-		/*
-		 * Enable the event on the cpu that it's on
-		 */
-		cpu_function_call(event->cpu, __perf_event_enable, event);
-		return;
-	}
-
 	raw_spin_lock_irq(&ctx->lock);
 	if (event->state >= PERF_EVENT_STATE_INACTIVE)
 		goto out;
@@ -1998,8 +1961,12 @@ retry:
 
 	raw_spin_unlock_irq(&ctx->lock);
 
-	if (!task_function_call(task, __perf_event_enable, event))
+	if (task) {
+		if (!task_function_call(task, __perf_event_enable, event))
+			return;
+	} else if (!cpu_function_call(event->cpu, __perf_event_enable, event)) {
 		return;
+	}
 
 	raw_spin_lock_irq(&ctx->lock);
 
@@ -2362,6 +2329,9 @@ ctx_sched_in(struct perf_event_context *ctx,
 {
 	u64 now;
 	int is_active = ctx->is_active;
+
+	if (cpuctx->quiesced)
+		return;
 
 	ctx->is_active |= event_type;
 	if (likely(!ctx->nr_events))
@@ -3177,7 +3147,10 @@ static void free_event(struct perf_event *event)
 int perf_event_release_kernel(struct perf_event *event)
 {
 	struct perf_event_context *ctx = event->ctx;
+	bool cpu_event = !ctx->task;
 
+	if (cpu_event)
+		get_online_cpus();
 	WARN_ON_ONCE(ctx->parent_ctx);
 	/*
 	 * There are two ways this annotation is useful:
@@ -3196,6 +3169,8 @@ int perf_event_release_kernel(struct perf_event *event)
 	mutex_unlock(&ctx->mutex);
 
 	free_event(event);
+	if (cpu_event)
+		put_online_cpus();
 
 	return 0;
 }
@@ -3207,14 +3182,6 @@ EXPORT_SYMBOL_GPL(perf_event_release_kernel);
 static void put_event(struct perf_event *event)
 {
 	struct task_struct *owner;
-
-	/*
-	 * Event can be in state OFF because of a constraint check.
-	 * Change to ACTIVE so that it gets cleaned up correctly.
-	 */
-	if ((event->state == PERF_EVENT_STATE_OFF) &&
-	    event->attr.constraint_duplicate)
-		event->state = PERF_EVENT_STATE_ACTIVE;
 
 	if (!atomic_long_dec_and_test(&event->refcount))
 		return;
@@ -6352,6 +6319,7 @@ int perf_pmu_register(struct pmu *pmu, char *name, int type)
 {
 	int cpu, ret;
 
+	get_online_cpus();
 	mutex_lock(&pmus_lock);
 	ret = -ENOMEM;
 	pmu->pmu_disable_count = alloc_percpu(int);
@@ -6403,6 +6371,7 @@ skip_type:
 		cpuctx->jiffies_interval = 1;
 		INIT_LIST_HEAD(&cpuctx->rotation_list);
 		cpuctx->unique_pmu = pmu;
+		cpuctx->quiesced = !cpu_online(cpu);
 	}
 
 got_cpu_context:
@@ -6435,6 +6404,7 @@ got_cpu_context:
 	ret = 0;
 unlock:
 	mutex_unlock(&pmus_lock);
+	put_online_cpus();
 
 	return ret;
 
@@ -6453,6 +6423,7 @@ free_pdc:
 
 void perf_pmu_unregister(struct pmu *pmu)
 {
+	get_online_cpus();
 	mutex_lock(&pmus_lock);
 	list_del_rcu(&pmu->entry);
 	mutex_unlock(&pmus_lock);
@@ -6470,6 +6441,7 @@ void perf_pmu_unregister(struct pmu *pmu)
 	device_del(pmu->dev);
 	put_device(pmu->dev);
 	free_pmu_context(pmu);
+	put_online_cpus();
 }
 
 struct pmu *perf_init_event(struct perf_event *event)
@@ -6952,6 +6924,8 @@ SYSCALL_DEFINE5(perf_event_open,
 	if (event_fd < 0)
 		return event_fd;
 
+	get_online_cpus();
+
 	if (group_fd != -1) {
 		group_file = perf_fget_light(group_fd, &fput_needed);
 		if (IS_ERR(group_file)) {
@@ -7194,6 +7168,7 @@ SYSCALL_DEFINE5(perf_event_open,
 	 */
 	fput_light(group_file, fput_needed);
 	fd_install(event_fd, event_file);
+	put_online_cpus();
 	return event_fd;
 
 err_locked:
@@ -7215,6 +7190,7 @@ err_group_fd:
 	fput_light(group_file, fput_needed);
 err_fd:
 	put_unused_fd(event_fd);
+	put_online_cpus();
 	return err;
 }
 
@@ -7239,6 +7215,7 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 	 * Get the target context (task or percpu):
 	 */
 
+	get_online_cpus();
 	event = perf_event_alloc(attr, cpu, task, NULL, NULL,
 				 overflow_handler, context);
 	if (IS_ERR(event)) {
@@ -7259,11 +7236,13 @@ perf_event_create_kernel_counter(struct perf_event_attr *attr, int cpu,
 	perf_unpin_context(ctx);
 	mutex_unlock(&ctx->mutex);
 
+	put_online_cpus();
 	return event;
 
 err_free:
 	free_event(event);
 err:
+	put_online_cpus();
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(perf_event_create_kernel_counter);
@@ -7275,6 +7254,7 @@ void perf_pmu_migrate_context(struct pmu *pmu, int src_cpu, int dst_cpu)
 	struct perf_event *event, *tmp;
 	LIST_HEAD(events);
 
+	get_online_cpus();
 	src_ctx = &per_cpu_ptr(pmu->pmu_cpu_context, src_cpu)->ctx;
 	dst_ctx = &per_cpu_ptr(pmu->pmu_cpu_context, dst_cpu)->ctx;
 
@@ -7298,6 +7278,7 @@ void perf_pmu_migrate_context(struct pmu *pmu, int src_cpu, int dst_cpu)
 		get_ctx(dst_ctx);
 	}
 	mutex_unlock(&dst_ctx->mutex);
+	put_online_cpus();
 }
 EXPORT_SYMBOL_GPL(perf_pmu_migrate_context);
 
@@ -7871,10 +7852,10 @@ static void perf_event_exit_cpu_context(int cpu)
 	idx = srcu_read_lock(&pmus_srcu);
 	list_for_each_entry_rcu(pmu, &pmus, entry) {
 		/*
-		 * If keeping events across hotplugging is supported, do not
-		 * remove the event list, but keep it alive across CPU hotplug.
-		 * The context is exited via an fd close path when userspace
-		 * is done and the target CPU is online.
+		 * Retained events keep their lists across CPU hotplug. CPU_DYING
+		 * quiesces target-owned state. The fd close path removes an event
+		 * on its online CPU or detaches its quiesced offline context under
+		 * hotplug exclusion.
 		 */
 		if (!pmu->events_across_hotplug) {
 			ctx = &per_cpu_ptr(pmu->pmu_cpu_context, cpu)->ctx;
@@ -7888,12 +7869,73 @@ static void perf_event_exit_cpu_context(int cpu)
 	srcu_read_unlock(&pmus_srcu, idx);
 }
 
+static void perf_event_quiesce_cpu(void)
+{
+	struct perf_cpu_context *cpuctx;
+	struct perf_event_context *task_ctx;
+	struct pmu *pmu;
+
+	WARN_ON_ONCE(!irqs_disabled());
+	rcu_read_lock();
+	list_for_each_entry_rcu(pmu, &pmus, entry) {
+		cpuctx = this_cpu_ptr(pmu->pmu_cpu_context);
+		if (cpuctx->unique_pmu != pmu)
+			continue;
+		task_ctx = cpuctx->task_ctx;
+		perf_ctx_lock(cpuctx, task_ctx);
+		cpuctx->quiesced = true;
+		perf_pmu_disable(pmu);
+		perf_pmu_rotate_stop(pmu);
+		cpu_ctx_sched_out(cpuctx, EVENT_ALL);
+		if (task_ctx)
+			task_ctx_sched_out(task_ctx);
+		cpuctx->cgrp = NULL;
+		perf_pmu_enable(pmu);
+		perf_ctx_unlock(cpuctx, task_ctx);
+	}
+	rcu_read_unlock();
+}
+
+static void perf_event_resume_cpu(void *unused)
+{
+	struct perf_cpu_context *cpuctx;
+	struct perf_event_context *task_ctx;
+	struct pmu *pmu;
+
+	(void)unused;
+	WARN_ON_ONCE(!irqs_disabled());
+	rcu_read_lock();
+	list_for_each_entry_rcu(pmu, &pmus, entry) {
+		cpuctx = this_cpu_ptr(pmu->pmu_cpu_context);
+		if (cpuctx->unique_pmu != pmu)
+			continue;
+		task_ctx = cpuctx->task_ctx;
+		perf_ctx_lock(cpuctx, task_ctx);
+		if (cpuctx->quiesced) {
+			cpuctx->quiesced = false;
+			perf_pmu_disable(pmu);
+#ifdef CONFIG_CGROUP_PERF
+			if (cpuctx->ctx.nr_cgroups)
+				cpuctx->cgrp = perf_cgroup_from_task(current);
+#endif
+			perf_event_sched_in(cpuctx, task_ctx, current);
+			perf_pmu_enable(pmu);
+			if (cpuctx->ctx.nr_events || (task_ctx && task_ctx->nr_events))
+				perf_pmu_rotate_start(pmu);
+		}
+		perf_ctx_unlock(cpuctx, task_ctx);
+	}
+	rcu_read_unlock();
+}
+
 static void perf_event_exit_cpu(int cpu)
 {
 	perf_event_exit_cpu_context(cpu);
 }
 #else
 static inline void perf_event_exit_cpu(int cpu) { }
+static inline void perf_event_quiesce_cpu(void) { }
+static inline void perf_event_resume_cpu(void *unused) { }
 #endif
 
 static int
@@ -7931,6 +7973,14 @@ perf_cpu_notify(struct notifier_block *self, unsigned long action, void *hcpu)
 	case CPU_UP_CANCELED:
 	case CPU_DOWN_PREPARE:
 		perf_event_exit_cpu(cpu);
+		break;
+
+	case CPU_DYING:
+		perf_event_quiesce_cpu();
+		break;
+
+	case CPU_ONLINE:
+		smp_call_function_single(cpu, perf_event_resume_cpu, NULL, 1);
 		break;
 
 	default:

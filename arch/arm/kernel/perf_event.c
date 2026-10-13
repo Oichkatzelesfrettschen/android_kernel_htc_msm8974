@@ -279,11 +279,13 @@ armpmu_del(struct perf_event *event, int flags)
 	struct hw_perf_event *hwc = &event->hw;
 	int idx = hwc->idx;
 
+	(void)flags;
 	WARN_ON(idx < 0);
 
 	armpmu_stop(event, PERF_EF_UPDATE);
 	hw_events->events[idx] = NULL;
 	clear_bit(idx, hw_events->used_mask);
+	hwc->idx = -1;
 
 	/* Clear event constraints. */
 	if (armpmu->clear_event_constraints)
@@ -318,6 +320,8 @@ armpmu_add(struct perf_event *event, int flags)
 	/* If we don't have a space for the counter then finish early. */
 	idx = armpmu->get_event_idx(hw_events, hwc);
 	if (idx < 0) {
+		if (armpmu->clear_event_constraints)
+			armpmu->clear_event_constraints(event);
 		err = idx;
 		goto out;
 	}
@@ -432,26 +436,6 @@ multicore_request_irq(int irq, irq_handler_t *handle_irq)
 	return err;
 }
 
-#ifdef CONFIG_SMP
-static __ref int armpmu_cpu_up(int cpu)
-{
-	int ret = 0;
-
-	if (!cpumask_test_cpu(cpu, cpu_online_mask)) {
-		ret = cpu_up(cpu);
-		if (ret)
-			pr_err("Failed to bring up CPU: %d, ret: %d\n",
-			       cpu, ret);
-	}
-	return ret;
-}
-#else
-static inline int armpmu_cpu_up(int cpu)
-{
-	return 0;
-}
-#endif
-
 void __ref
 multicore_free_irq(int irq)
 {
@@ -459,11 +443,9 @@ multicore_free_irq(int irq)
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	if (irq >= 0) {
-		for_each_cpu(cpu, desc->percpu_enabled) {
-			if (!armpmu_cpu_up(cpu))
-				smp_call_function_single(cpu,
-						disable_irq_callback, &irq, 1);
-		}
+		for_each_cpu(cpu, desc->percpu_enabled)
+			smp_call_function_single(cpu,
+					disable_irq_callback, &irq, 1);
 		free_percpu_irq(irq, &pmu_irq_cookie);
 	}
 }
@@ -585,10 +567,12 @@ hw_perf_event_destroy(struct perf_event *event)
 	atomic_t *active_events	 = &armpmu->active_events;
 	struct mutex *pmu_reserve_mutex = &armpmu->reserve_mutex;
 
+	get_online_cpus();
 	if (atomic_dec_and_mutex_lock(active_events, pmu_reserve_mutex)) {
 		armpmu_release_hardware(armpmu);
 		mutex_unlock(pmu_reserve_mutex);
 	}
+	put_online_cpus();
 }
 
 static int
@@ -678,6 +662,7 @@ static int armpmu_event_init(struct perf_event *event)
 
 	event->destroy = hw_perf_event_destroy;
 
+	get_online_cpus();
 	if (!atomic_inc_not_zero(active_events)) {
 		mutex_lock(&armpmu->reserve_mutex);
 		if (atomic_read(active_events) == 0)
@@ -688,12 +673,15 @@ static int armpmu_event_init(struct perf_event *event)
 		mutex_unlock(&armpmu->reserve_mutex);
 	}
 
-	if (err)
+	if (err) {
+		put_online_cpus();
 		return err;
+	}
 
 	err = __hw_perf_event_init(event);
 	if (err)
 		hw_perf_event_destroy(event);
+	put_online_cpus();
 
 	return err;
 }
@@ -886,67 +874,36 @@ static int __cpuinit pmu_cpu_notify(struct notifier_block *b,
 					unsigned long action, void *hcpu)
 {
 	int irq;
-	struct pmu *pmu;
-	int cpu = (int)hcpu;
+	bool allocated;
 
-	switch ((action & ~CPU_TASKS_FROZEN)) {
-	case CPU_DOWN_PREPARE:
-		if (cpu_pmu && cpu_pmu->save_pm_registers)
-			smp_call_function_single(cpu,
-						 cpu_pmu->save_pm_registers,
-						 hcpu, 1);
-		break;
-	case CPU_STARTING:
-		if (cpu_pmu && cpu_pmu->reset)
-			cpu_pmu->reset(NULL);
-		if (cpu_pmu && cpu_pmu->restore_pm_registers)
-			smp_call_function_single(cpu,
-						 cpu_pmu->restore_pm_registers,
-						 hcpu, 1);
-	}
-
-	if (cpu_has_active_perf((int)hcpu)) {
-		switch ((action & ~CPU_TASKS_FROZEN)) {
-
-		case CPU_DOWN_PREPARE:
-			armpmu_update_counters();
-			/*
-			 * If this is on a multicore CPU, we need
-			 * to disarm the PMU IRQ before disappearing.
-			 */
-			if (cpu_pmu &&
-				cpu_pmu->plat_device->dev.platform_data) {
-				irq = platform_get_irq(cpu_pmu->plat_device, 0);
-				smp_call_function_single((int)hcpu,
-						disable_irq_callback, &irq, 1);
-			}
-			return NOTIFY_DONE;
-
-		case CPU_STARTING:
-			/*
-			 * If this is on a multicore CPU, we need
-			 * to arm the PMU IRQ before appearing.
-			 */
-			if (cpu_pmu &&
-				cpu_pmu->plat_device->dev.platform_data) {
-				irq = platform_get_irq(cpu_pmu->plat_device, 0);
-				enable_irq_callback(&irq);
-			}
-
-			if (cpu_pmu) {
-				__get_cpu_var(from_idle) = 1;
-				pmu = &cpu_pmu->pmu;
-				pmu->pmu_enable(pmu);
-				return NOTIFY_OK;
-			}
-		default:
-			return NOTIFY_DONE;
-		}
-	}
-
-	if ((action & ~CPU_TASKS_FROZEN) != CPU_STARTING)
+	(void)b;
+	if (!cpu_pmu)
 		return NOTIFY_DONE;
 
+	/* Reserved PPIs outlive individual counter slots. */
+	allocated = cpumask_test_cpu(0, &cpu_pmu->active_irqs) &&
+		cpu_pmu->free_pmu_irq == multicore_free_irq;
+	switch (action & ~CPU_TASKS_FROZEN) {
+	case CPU_DYING:
+		if (cpu_pmu->save_pm_registers)
+			cpu_pmu->save_pm_registers(hcpu);
+		if (allocated) {
+			irq = platform_get_irq(cpu_pmu->plat_device, 0);
+			disable_irq_callback(&irq);
+		}
+		break;
+	case CPU_STARTING:
+		if (cpu_pmu->reset)
+			cpu_pmu->reset(NULL);
+		if (cpu_pmu->restore_pm_registers)
+			cpu_pmu->restore_pm_registers(hcpu);
+		__get_cpu_var(from_idle) = 0;
+		if (allocated) {
+			irq = platform_get_irq(cpu_pmu->plat_device, 0);
+			enable_irq_callback(&irq);
+		}
+		break;
+	}
 	return NOTIFY_OK;
 }
 

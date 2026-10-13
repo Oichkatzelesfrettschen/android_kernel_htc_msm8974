@@ -27,6 +27,7 @@
 struct pmu_constraints {
 	u64 pmu_bitmap;
 	u8 codes[PMU_CODES_SIZE];
+	unsigned int users[PMU_CODES_SIZE];
 	raw_spinlock_t lock;
 } l2_pmu_constraints = {
 	.pmu_bitmap = 0,
@@ -442,11 +443,12 @@ static int msm_l2_test_set_ev_constraint(struct perf_event *event)
 		goto out;
 	}
 
-	bitmap_t = 1 << shift_idx;
+	bitmap_t = 1ULL << shift_idx;
 
 	if (!(l2_pmu_constraints.pmu_bitmap & bitmap_t)) {
 		l2_pmu_constraints.pmu_bitmap |= bitmap_t;
 		l2_pmu_constraints.codes[shift_idx] = code;
+		l2_pmu_constraints.users[shift_idx] = 1;
 		goto out;
 	} else {
 		/*
@@ -467,6 +469,8 @@ static int msm_l2_test_set_ev_constraint(struct perf_event *event)
 				event->state = PERF_EVENT_STATE_OFF;
 				event->attr.constraint_duplicate = 1;
 				err = -EPERM;
+			} else {
+				l2_pmu_constraints.users[shift_idx]++;
 			}
 	}
 out:
@@ -485,7 +489,7 @@ static int msm_l2_clear_ev_constraint(struct perf_event *event)
 	u32 shift_idx;
 	int err = 1;
 
-	if (evt_prefix == L2_TRACECTR_PREFIX)
+	if (evt_prefix == L2_TRACECTR_PREFIX || evt_type == L2CYCLE_CTR_RAW_CODE)
 		return 1;
 	raw_spin_lock_irqsave(&l2_pmu_constraints.lock, flags);
 
@@ -495,9 +499,14 @@ static int msm_l2_clear_ev_constraint(struct perf_event *event)
 		err = -EINVAL;
 		goto out;
 	}
-	bitmap_t = 1 << shift_idx;
+	bitmap_t = 1ULL << shift_idx;
 
-	/* Clear constraint bit. */
+	if (WARN_ON_ONCE(!l2_pmu_constraints.users[shift_idx]))
+		goto out;
+	if (--l2_pmu_constraints.users[shift_idx])
+		goto out;
+
+	/* Clear constraint bit after its last owner releases it. */
 	l2_pmu_constraints.pmu_bitmap &= ~bitmap_t;
 
 	/* Clear code. */

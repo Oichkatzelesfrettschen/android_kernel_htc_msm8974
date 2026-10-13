@@ -1094,6 +1094,8 @@ struct perf_cpu_context {
 	int				jiffies_interval;
 	struct pmu			*unique_pmu;
 	struct perf_cgroup		*cgrp;
+	/* CPU_DYING blocks scheduling until post-reset CPU_ONLINE. */
+	bool				quiesced;
 };
 
 struct perf_output_handle {

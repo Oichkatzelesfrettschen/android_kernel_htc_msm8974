@@ -9,6 +9,9 @@
 #include <linux/kernel.h>
 #include <linux/export.h>
 #include <linux/irq_work.h>
+#include <linux/cpu.h>
+#include <linux/init.h>
+#include <linux/notifier.h>
 #include <linux/percpu.h>
 #include <linux/hardirq.h>
 #include <linux/irqflags.h>
@@ -94,10 +97,10 @@ bool irq_work_queue(struct irq_work *work)
 EXPORT_SYMBOL_GPL(irq_work_queue);
 
 /*
- * Run the irq_work entries on this cpu. Requires to be ran from hardirq
- * context with local IRQs disabled.
+ * Drain CPU-local callbacks with interrupts disabled before CPU death or
+ * while servicing the hardirq runner.
  */
-void irq_work_run(void)
+static void __irq_work_run(void)
 {
 	struct irq_work *work;
 	struct llist_head *this_list;
@@ -107,7 +110,6 @@ void irq_work_run(void)
 	if (llist_empty(this_list))
 		return;
 
-	BUG_ON(!in_irq());
 	BUG_ON(!irqs_disabled());
 
 	llnode = llist_del_all(this_list);
@@ -129,7 +131,36 @@ void irq_work_run(void)
 		(void)cmpxchg(&work->flags, IRQ_WORK_BUSY, 0);
 	}
 }
+void irq_work_run(void)
+{
+	BUG_ON(!in_irq());
+	__irq_work_run();
+}
 EXPORT_SYMBOL_GPL(irq_work_run);
+
+#ifdef CONFIG_HOTPLUG_CPU
+static int irq_work_cpu_notify(struct notifier_block *self,
+			      unsigned long action, void *hcpu)
+{
+	(void)self;
+	if ((action & ~CPU_TASKS_FROZEN) == CPU_DYING) {
+		if (WARN_ON_ONCE((long)hcpu != smp_processor_id()))
+			return NOTIFY_DONE;
+		__irq_work_run();
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block irq_work_cpu_notifier = {
+	.notifier_call = irq_work_cpu_notify,
+};
+
+static int __init irq_work_init_cpu_notifier(void)
+{
+	return register_cpu_notifier(&irq_work_cpu_notifier);
+}
+early_initcall(irq_work_init_cpu_notifier);
+#endif
 
 /*
  * Synchronize against the irq_work @entry, ensures the entry is not
