@@ -41,4 +41,3 @@ static void perf_sample_data_init(struct perf_sample_data *data, u64 address)
 static void do_perf_sw_event(u32 type, u32 event_id, u64 count,
                              struct perf_sample_data *data,
                              struct pt_regs *registers);
-
