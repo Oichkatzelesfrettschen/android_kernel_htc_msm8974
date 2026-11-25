@@ -887,6 +887,16 @@ static void update_sit_entry(struct f2fs_sb_info *sbi, block_t blkaddr, int del)
 	unsigned int segno, offset;
 	long int new_vblocks;
 
+	/*
+	 * A write already in flight when f2fs_put_super() starts freeing the
+	 * segment manager (destroy_segment_manager()) can still reach here;
+	 * sync_inodes_sb() in f2fs_put_super() closes that window in the
+	 * common case, but bails this one write out rather than dereference
+	 * torn-down segment-manager state if it does not.
+	 */
+	if (unlikely(!SM_I(sbi)))
+		return;
+
 	segno = GET_SEGNO(sbi, blkaddr);
 
 	se = get_seg_entry(sbi, segno);
